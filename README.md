@@ -1,18 +1,234 @@
-# ARCHITECTURE.md — RivalPR Intel
+# RivalPR Intel
 
-> System Design Document · April 2025 · v2.0
+A PR Agency CRM and Outreach Tracker. Manage clients, track media contacts, score journalist relationships, and generate personalised pitch emails using Anthropic Claude AI — all scoped to your account.
 
 ---
 
-## 1. Overview & Purpose
+## Quick Start
 
-| Field            | Value                                                                                                                                                                                                                                                                     |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Project Name** | RivalPR Intel                                                                                                                                                                                                                                                             |
-| **Description**  | A streamlined PR Agency CRM and Outreach Tracker. Allows PR professionals to manage clients, track media contacts in a shared database, score personal relationships, and generate hyper-personalized pitch emails using Anthropic's Claude AI based on campaign context. |
-| **Developer**    | [Your Name]                                                                                                                                                                                                                                                               |
-| **Timeline**     | April 1–30, 2025                                                                                                                                                                                                                                                          |
-| **Doc Version**  | v2.0 — includes schema hardening, async AI generation, soft-delete, pitch versioning                                                                                                                                                                                      |
+### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) running
+- A `.env` file in the project root (see [Environment Variables](#environment-variables))
+
+### 1. Create your `.env`
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set `JWT_SECRET` to any random string of at least 32 characters. Everything else works with the defaults.
+
+### 2. Start the stack
+
+```bash
+docker compose up --build
+```
+
+| Service  | URL                   |
+| -------- | --------------------- |
+| Backend  | http://localhost:8080 |
+| Database | localhost:**5433**    |
+
+The backend auto-creates all database tables on first boot. Verify it's running:
+
+```bash
+curl http://localhost:8080/health
+# {"status":"ok","timestamp":"..."}
+```
+
+### 3. Stop the stack
+
+```bash
+docker compose down
+```
+
+### Everyday workflow
+
+```bash
+docker compose up       # start (no rebuild)
+docker compose up -d    # start in background
+docker compose logs -f  # tail logs
+```
+
+The backend uses `air` for hot-reload — saving any `.go` file automatically recompiles and restarts the server inside the container.
+
+---
+
+## Environment Variables
+
+| Variable              | Required | Default                 | Description                                |
+| --------------------- | -------- | ----------------------- | ------------------------------------------ |
+| `DATABASE_URL`        | Yes      | (see .env.example)      | PostgreSQL connection string               |
+| `JWT_SECRET`          | Yes      | —                       | Token signing key — **min 32 characters**  |
+| `POSTGRES_USER`       | Yes      | `rivalpr`               | Database user (used by postgres container) |
+| `POSTGRES_PASSWORD`   | Yes      | `rivalpr_secret`        | Database password                          |
+| `POSTGRES_DB`         | Yes      | `rivalpr`               | Database name                              |
+| `BCRYPT_COST`         | No       | `12`                    | bcrypt work factor (min 10)                |
+| `AI_RATE_LIMIT_RPM`   | No       | `20`                    | AI generation requests per user per minute |
+| `ANTHROPIC_API_KEY`   | No       | —                       | Required for real AI generation (Phase 3)  |
+| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:8080` | Backend URL for the frontend               |
+
+---
+
+## API
+
+Import the Postman collection for a ready-to-use test suite:
+
+- `api-collection/RivalPR-Intel.postman_collection.json`
+- `api-collection/RivalPR-Intel.postman_environment.json`
+
+The collection auto-saves the JWT token and all resource IDs — run requests top to bottom and everything chains together.
+
+### Endpoints
+
+| Method                | Path                        | Description                        |
+| --------------------- | --------------------------- | ---------------------------------- |
+| `POST`                | `/auth/register`            | Create account                     |
+| `POST`                | `/auth/login`               | Get JWT token                      |
+| `GET/POST/PUT/DELETE` | `/api/clients`              | Client management                  |
+| `GET/POST/PUT/DELETE` | `/api/outlets`              | Media outlet management            |
+| `GET/POST/PUT/DELETE` | `/api/journalists`          | Journalist database (paginated)    |
+| `GET/POST/PUT/DELETE` | `/api/crm/relationships`    | Per-journalist relationship scores |
+| `GET/POST/PUT/DELETE` | `/api/campaigns`            | Campaign management                |
+| `GET/POST/PUT/DELETE` | `/api/pitches`              | Pitch management                   |
+| `GET`                 | `/api/pitches/:id/versions` | List AI-generated versions         |
+| `POST`                | `/api/pitches/:id/generate` | Generate a new pitch version       |
+
+All `/api/*` routes require `Authorization: Bearer <token>`.
+
+---
+
+## User Scenarios
+
+### Epic 1 — Authentication
+
+A PR professional registers with their email, logs in, and receives a JWT. All their data — campaigns, pitches, relationships — is scoped to their account. No one else can see or modify their records.
+
+```
+Register → Login → receive token → use for all subsequent requests
+```
+
+---
+
+### Epic 2 — Client & Campaign Management
+
+The user creates a client (e.g. "Acme Corp") representing a brand they manage. Under that client, they create a campaign with a title and a press release text. The campaign becomes the top-level context for all outreach activity.
+
+```
+Create Client (Acme Corp, industry: Technology)
+  └── Create Campaign (title: "Q2 AI Platform Launch", press_release_text: "...")
+```
+
+---
+
+### Epic 3 — Journalist CRM
+
+The user builds a personal media contact database. They add journalists linked to outlets (TechCrunch, Forbes, etc.) and maintain a private `relationship_score` (1–10) and notes for each — stored in `crm_relationships`, invisible to other users.
+
+> _"I've worked with Sarah at TechCrunch three times — let me score her as 8/10 and note that she responds best to exclusive data angles."_
+
+```
+Create Outlet (TechCrunch)
+  └── Create Journalist (Sarah Chen, niche: Enterprise SaaS)
+        └── Create CRM Relationship (score: 8, notes: "warm contact, prefers data-first pitches")
+```
+
+---
+
+### Epic 4 — AI-Powered Pitch Generation
+
+The user selects a campaign and a journalist, then hits **Generate**. The system uses the campaign's press release, the journalist's niche and outlet name, and their CRM score as context — calls the AI, and stores the result as a new `pitch_version`. Each regeneration increments the version number.
+
+> _"Generate a pitch for Sarah at TechCrunch for the Acme AI launch, then tweak the tone and save as v2."_
+
+```
+Create Pitch (client: Acme, journalist: Sarah Chen, campaign: Q2 Launch)
+  └── POST /pitches/:id/generate  →  pitch_version v1 (AI-generated body + prompt snapshot)
+  └── POST /pitches/:id/generate  →  pitch_version v2
+  └── GET  /pitches/:id/versions  →  compare v1 and v2, pick the best
+```
+
+> **Note:** AI generation currently returns a mock template response. Real Anthropic Claude integration is Phase 3 (requires `ANTHROPIC_API_KEY`).
+
+---
+
+### Epic 5 — Pitch Tracking & Status
+
+After sending a pitch, the user updates its status to reflect real-world progress. Valid states: `draft → sent → opened → replied`. The pitch list can be filtered by status or campaign.
+
+```
+PUT /api/pitches/:id  { "status": "sent" }
+GET /api/pitches?status=replied       ← all journalists who responded
+GET /api/pitches?campaign_id=<id>     ← all pitches for a specific campaign
+```
+
+---
+
+### Epic 6 — Outreach Dashboard _(Phase 2 — Frontend)_
+
+A top-level view showing campaign health: how many pitches were sent vs replied, which journalists are warm (high CRM score) vs cold, and recent activity. Powered by the existing API queries above, rendered in the Next.js frontend.
+
+---
+
+## Project Structure
+
+```
+.
+├── backend/
+│   ├── cmd/server/main.go          # entrypoint: DB, router, middleware, routes
+│   ├── internal/
+│   │   ├── config/config.go        # env var loader
+│   │   ├── models/                 # 8 GORM models
+│   │   ├── handlers/               # HTTP handlers — one file per resource
+│   │   ├── middleware/             # JWT auth, CORS, rate limiting
+│   │   └── services/auth.go        # register, login, JWT generation
+│   ├── Dockerfile
+│   └── .air.toml                   # hot-reload config
+├── frontend/                       # Next.js App Router (Phase 2)
+├── api-collection/                 # Postman collection + environment
+├── docker-compose.yml
+├── .env.example
+└── README.md
+```
+
+---
+
+## Tech Stack
+
+| Layer     | Technology                                      |
+| --------- | ----------------------------------------------- |
+| Backend   | Go 1.26 · Gin · GORM                            |
+| Database  | PostgreSQL 16 (alpine)                          |
+| Auth      | JWT (HS256) · bcrypt cost ≥ 12                  |
+| AI        | Anthropic Claude (claude-3-5-sonnet)            |
+| Frontend  | Next.js (App Router) · shadcn/ui · Tailwind CSS |
+| Container | Docker · docker-compose                         |
+
+---
+
+## Connect to the Database
+
+Using DBeaver, TablePlus, or `psql`:
+
+```
+Host:     localhost
+Port:     5433
+User:     rivalpr
+Password: rivalpr_secret
+Database: rivalpr
+```
+
+```bash
+psql postgres://rivalpr:rivalpr_secret@localhost:5433/rivalpr
+```
+
+---
+
+<details>
+<summary><strong>Architecture & Design Decisions</strong></summary>
+
+## System Architecture
 
 ---
 
@@ -397,3 +613,5 @@ volumes:
 - **Optimistic UI for pitch status** — `status` updates locally on "Mark as Sent" before the API confirms, for a snappier experience.
 - **Version picker UI** — after AI generation, a side-by-side diff view lets users compare `pitch_versions` before selecting one to send.
 - **Cursor-based pagination on `/journalists`** — the global journalist DB can grow large; offset pagination is added from day one to prevent slow full-table scans.
+
+</details>

@@ -1,0 +1,715 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "RivalPR Intel API",
+    "description": "Complete API collection for RivalPR Intel — PR Agency CRM & Outreach Tracker.\n\nQuick start:\n1. Run 'Register User' → token is auto-saved to collection variables.\n2. All subsequent requests use `{{token}}` automatically.\n3. Run requests in folder order to build up test data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "clientId", "value": "", "type": "string" },
+    { "key": "outletId", "value": "", "type": "string" },
+    { "key": "journalistId", "value": "", "type": "string" },
+    { "key": "crmRelationshipId", "value": "", "type": "string" },
+    { "key": "campaignId", "value": "", "type": "string" },
+    { "key": "pitchId", "value": "", "type": "string" },
+    { "key": "pitchVersionId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+            "description": "Returns 200 if backend is running."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  console.log('Token saved:', res.token.substring(0, 20) + '...');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@acmeagency.com\",\n  \"password\": \"securepass123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Creates a new user account. Token is auto-saved to {{token}}."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  console.log('Token saved:', res.token.substring(0, 20) + '...');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@acmeagency.com\",\n  \"password\": \"securepass123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Authenticates and returns a JWT. Token is auto-saved to {{token}}."
+          }
+        },
+        {
+          "name": "Register - Duplicate Email (expect 409)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@acmeagency.com\",\n  \"password\": \"securepass123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Should return 409 Conflict."
+          }
+        },
+        {
+          "name": "Login - Wrong Password (expect 401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@acmeagency.com\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Should return 401 Unauthorized."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "Create Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('clientId', res.id);",
+                  "  console.log('clientId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"industry\": \"Technology\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/clients", "host": ["{{baseUrl}}"], "path": ["api", "clients"] }
+          }
+        },
+        {
+          "name": "List Clients",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/clients", "host": ["{{baseUrl}}"], "path": ["api", "clients"] }
+          }
+        },
+        {
+          "name": "Get Client",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "clients", "{{clientId}}"] }
+          }
+        },
+        {
+          "name": "Update Client",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corp (Updated)\",\n  \"industry\": \"SaaS\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "clients", "{{clientId}}"] }
+          }
+        },
+        {
+          "name": "Delete Client (soft)",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/clients/{{clientId}}", "host": ["{{baseUrl}}"], "path": ["api", "clients", "{{clientId}}"] },
+            "description": "Soft delete — sets deleted_at. GET after this returns 404."
+          }
+        },
+        {
+          "name": "Create Client - Missing Name (expect 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"industry\": \"Tech\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/clients", "host": ["{{baseUrl}}"], "path": ["api", "clients"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Outlets",
+      "item": [
+        {
+          "name": "Create Outlet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('outletId', res.id);",
+                  "  console.log('outletId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TechCrunch\",\n  \"website\": \"https://techcrunch.com\",\n  \"country\": \"US\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/outlets", "host": ["{{baseUrl}}"], "path": ["api", "outlets"] }
+          }
+        },
+        {
+          "name": "List Outlets",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/outlets", "host": ["{{baseUrl}}"], "path": ["api", "outlets"] }
+          }
+        },
+        {
+          "name": "Get Outlet",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/outlets/{{outletId}}", "host": ["{{baseUrl}}"], "path": ["api", "outlets", "{{outletId}}"] }
+          }
+        },
+        {
+          "name": "Update Outlet",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TechCrunch\",\n  \"website\": \"https://techcrunch.com\",\n  \"country\": \"United States\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/outlets/{{outletId}}", "host": ["{{baseUrl}}"], "path": ["api", "outlets", "{{outletId}}"] }
+          }
+        },
+        {
+          "name": "Delete Outlet (soft)",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/outlets/{{outletId}}", "host": ["{{baseUrl}}"], "path": ["api", "outlets", "{{outletId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Journalists",
+      "item": [
+        {
+          "name": "Create Journalist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('journalistId', res.id);",
+                  "  console.log('journalistId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outlet_id\": \"{{outletId}}\",\n  \"name\": \"Sarah Chen\",\n  \"email\": \"sarah.chen@techcrunch.com\",\n  \"niche\": \"SaaS / Enterprise Software\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/journalists", "host": ["{{baseUrl}}"], "path": ["api", "journalists"] },
+            "description": "Requires a valid outletId from Outlets → Create Outlet."
+          }
+        },
+        {
+          "name": "List Journalists",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/journalists?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "journalists"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Journalists - Filter by Outlet",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/journalists?outlet_id={{outletId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "journalists"],
+              "query": [{ "key": "outlet_id", "value": "{{outletId}}" }]
+            }
+          }
+        },
+        {
+          "name": "Get Journalist",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/journalists/{{journalistId}}", "host": ["{{baseUrl}}"], "path": ["api", "journalists", "{{journalistId}}"] }
+          }
+        },
+        {
+          "name": "Update Journalist",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"niche\": \"AI / Machine Learning\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/journalists/{{journalistId}}", "host": ["{{baseUrl}}"], "path": ["api", "journalists", "{{journalistId}}"] }
+          }
+        },
+        {
+          "name": "Delete Journalist (soft)",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/journalists/{{journalistId}}", "host": ["{{baseUrl}}"], "path": ["api", "journalists", "{{journalistId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "CRM Relationships",
+      "item": [
+        {
+          "name": "Create CRM Relationship",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('crmRelationshipId', res.id);",
+                  "  console.log('crmRelationshipId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"journalist_id\": \"{{journalistId}}\",\n  \"relationship_score\": 7,\n  \"private_notes\": \"Met at TechCrunch Disrupt 2024. Warm contact — responds quickly. Prefers story angles with enterprise data.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/crm/relationships", "host": ["{{baseUrl}}"], "path": ["api", "crm", "relationships"] },
+            "description": "Score must be 1–10."
+          }
+        },
+        {
+          "name": "List CRM Relationships",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crm/relationships", "host": ["{{baseUrl}}"], "path": ["api", "crm", "relationships"] }
+          }
+        },
+        {
+          "name": "Get CRM Relationship",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crm/relationships/{{crmRelationshipId}}", "host": ["{{baseUrl}}"], "path": ["api", "crm", "relationships", "{{crmRelationshipId}}"] }
+          }
+        },
+        {
+          "name": "Update CRM Relationship",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"relationship_score\": 9,\n  \"private_notes\": \"Covered our last 3 releases. Very warm contact. Exclusive first ask.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/crm/relationships/{{crmRelationshipId}}", "host": ["{{baseUrl}}"], "path": ["api", "crm", "relationships", "{{crmRelationshipId}}"] }
+          }
+        },
+        {
+          "name": "Delete CRM Relationship",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/crm/relationships/{{crmRelationshipId}}", "host": ["{{baseUrl}}"], "path": ["api", "crm", "relationships", "{{crmRelationshipId}}"] },
+            "description": "Hard delete — permanently removes the relationship record."
+          }
+        },
+        {
+          "name": "Create Duplicate Relationship (expect 409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"journalist_id\": \"{{journalistId}}\",\n  \"relationship_score\": 5,\n  \"private_notes\": \"Duplicate — should fail\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/crm/relationships", "host": ["{{baseUrl}}"], "path": ["api", "crm", "relationships"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Campaigns",
+      "item": [
+        {
+          "name": "Create Campaign",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('campaignId', res.id);",
+                  "  console.log('campaignId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"title\": \"Acme AI Platform Launch Q2 2026\",\n  \"press_release_text\": \"FOR IMMEDIATE RELEASE\\n\\nAcme Corp today announced the launch of AcmeAI, an enterprise-grade AI platform that reduces operational costs by 40% for mid-market companies.\\n\\nThe platform integrates with existing ERP and CRM systems in under 48 hours, requiring no specialized AI expertise. Early customers including RetailCo and ManuTech have reported an average of 3.2x ROI within the first 90 days.\\n\\n'We built AcmeAI specifically for operations teams that can't afford months-long implementation cycles,' said Jane Smith, CEO of Acme Corp. 'The results from our beta cohort exceeded our most optimistic projections.'\\n\\nAcmeAI is available immediately at $2,500/month for companies up to 500 employees, with enterprise pricing available.\\n\\nAbout Acme Corp: Acme Corp is a B2B SaaS company founded in 2020, serving 300+ mid-market enterprises across North America and Europe.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/campaigns", "host": ["{{baseUrl}}"], "path": ["api", "campaigns"] }
+          }
+        },
+        {
+          "name": "List Campaigns",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/campaigns", "host": ["{{baseUrl}}"], "path": ["api", "campaigns"] }
+          }
+        },
+        {
+          "name": "Get Campaign",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}", "host": ["{{baseUrl}}"], "path": ["api", "campaigns", "{{campaignId}}"] }
+          }
+        },
+        {
+          "name": "Update Campaign",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Acme AI Platform Launch Q2 2026 (Updated)\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}", "host": ["{{baseUrl}}"], "path": ["api", "campaigns", "{{campaignId}}"] }
+          }
+        },
+        {
+          "name": "Delete Campaign (soft)",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}", "host": ["{{baseUrl}}"], "path": ["api", "campaigns", "{{campaignId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pitches",
+      "item": [
+        {
+          "name": "Create Pitch",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('pitchId', res.id);",
+                  "  console.log('pitchId saved:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"journalist_id\": \"{{journalistId}}\",\n  \"campaign_id\": \"{{campaignId}}\",\n  \"context_brief\": \"Sarah covers enterprise AI extensively. Lead with the ROI angle and the 48-hour integration story.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/pitches", "host": ["{{baseUrl}}"], "path": ["api", "pitches"] }
+          }
+        },
+        {
+          "name": "Create Pitch (no campaign)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"journalist_id\": \"{{journalistId}}\",\n  \"context_brief\": \"Ad-hoc pitch — no campaign attached. Reaching out about a product update.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/pitches", "host": ["{{baseUrl}}"], "path": ["api", "pitches"] }
+          }
+        },
+        {
+          "name": "List Pitches",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/pitches", "host": ["{{baseUrl}}"], "path": ["api", "pitches"] }
+          }
+        },
+        {
+          "name": "List Pitches - Filter by Campaign",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/pitches?campaign_id={{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "pitches"],
+              "query": [{ "key": "campaign_id", "value": "{{campaignId}}" }]
+            }
+          }
+        },
+        {
+          "name": "List Pitches - Filter by Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/pitches?status=draft",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "pitches"],
+              "query": [{ "key": "status", "value": "draft" }]
+            }
+          }
+        },
+        {
+          "name": "Get Pitch",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}"] }
+          }
+        },
+        {
+          "name": "Update Pitch Status → sent",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"sent\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}"] }
+          }
+        },
+        {
+          "name": "Update Pitch Status → replied",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"replied\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}"] }
+          }
+        },
+        {
+          "name": "Update Pitch - Invalid Status (expect 400)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}"] },
+            "description": "Should return 400 — 'rejected' is not a valid status."
+          }
+        },
+        {
+          "name": "Delete Pitch",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}"] },
+            "description": "Hard delete."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pitch Versions (AI Generation)",
+      "item": [
+        {
+          "name": "Generate Pitch v1 (Mock AI)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('pitchVersionId', res.id);",
+                  "  console.log('pitchVersionId saved:', res.id);",
+                  "  console.log('Version number:', res.version_number);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}/generate", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}", "generate"] },
+            "description": "Generates a mock AI pitch body (Phase 1). Returns 201 with the new pitch_version. Run multiple times to create v2, v3, etc."
+          }
+        },
+        {
+          "name": "Generate Pitch v2 (Mock AI)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}/generate", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}", "generate"] },
+            "description": "Re-generates the pitch. Version number increments automatically."
+          }
+        },
+        {
+          "name": "List Pitch Versions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}/versions", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}", "versions"] },
+            "description": "Returns all versions ordered by version_number ASC."
+          }
+        },
+        {
+          "name": "Get Pitch Version",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/pitches/{{pitchId}}/versions/{{pitchVersionId}}", "host": ["{{baseUrl}}"], "path": ["api", "pitches", "{{pitchId}}", "versions", "{{pitchVersionId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error & Edge Cases",
+      "item": [
+        {
+          "name": "No Auth Header (expect 401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/clients", "host": ["{{baseUrl}}"], "path": ["api", "clients"] },
+            "description": "Should return 401 Unauthorized."
+          }
+        },
+        {
+          "name": "Invalid UUID in Path (expect 400)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/clients/not-a-uuid", "host": ["{{baseUrl}}"], "path": ["api", "clients", "not-a-uuid"] },
+            "description": "Should return 400 Bad Request."
+          }
+        },
+        {
+          "name": "Non-existent Resource (expect 404)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/clients/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api", "clients", "00000000-0000-0000-0000-000000000000"] },
+            "description": "Should return 404 Not Found."
+          }
+        }
+      ]
+    }
+  ]
+}
