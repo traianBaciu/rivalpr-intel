@@ -1,10 +1,13 @@
 # ── Development image with air hot-reload ─────────────────────────────────────
-FROM golang:1.22-alpine
+FROM golang:1.24-alpine
+
+# Allow Go to auto-download newer toolchains required by dependencies
+ENV GOTOOLCHAIN=auto
 
 RUN apk add --no-cache git curl
 
 # Install air for hot-reload in development
-RUN go install github.com/air-verse/air@latest
+RUN go install github.com/air-verse/air@v1.61.7
 
 WORKDIR /app
 
