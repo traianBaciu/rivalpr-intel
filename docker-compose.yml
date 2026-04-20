@@ -30,15 +30,15 @@ services:
       - ./backend:/app
       - go_cache:/root/go/pkg/mod
 
-  # frontend is in the 'frontend' profile — Phase 2
-  # enable with: docker compose --profile frontend up
   frontend:
-    profiles: ["frontend"]
     build: ./frontend
     restart: unless-stopped
     env_file: .env
     ports:
       - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - PORT=3000
     depends_on:
       - backend
 

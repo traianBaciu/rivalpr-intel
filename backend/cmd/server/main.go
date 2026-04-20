@@ -16,6 +16,7 @@ import (
 	"github.com/rivalpr/backend/internal/middleware"
 	"github.com/rivalpr/backend/internal/models"
 	"github.com/rivalpr/backend/internal/services"
+	"github.com/rivalpr/backend/internal/worker"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -52,9 +53,16 @@ func main() {
 	}
 	log.Println("Database migrations applied")
 
-	// Initialise services and handler.
+	// Initialise services, worker pool, and handler.
 	authService := services.NewAuthService(db, cfg)
-	h := handlers.NewHandler(db, cfg, authService)
+	anthropicClient := services.NewAnthropicClient(cfg.AnthropicAPIKey)
+	aiWorker := worker.New(db, anthropicClient)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	aiWorker.Start(ctx)
+
+	h := handlers.NewHandler(db, cfg, authService, aiWorker)
 
 	// Rate limiters: auth (10/min by IP), AI (from config, by user), general (120/min by user).
 	authLimiter := middleware.NewRateLimiter(10)
@@ -170,12 +178,11 @@ func main() {
 	<-quit
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("server forced shutdown: %v", err)
 	}
 	log.Println("Server exited cleanly")
 }
-

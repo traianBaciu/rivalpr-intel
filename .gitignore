@@ -10,12 +10,14 @@
 *.out
 
 # ── Node / Next.js ─────────────────────────────────
-/frontend/node_modules/
-/frontend/.next/
-/frontend/out/
-/frontend/.swc/
-/frontend/coverage/
-*.tsbuildinfo
+# (detailed rules live in frontend/.gitignore)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.swc/
+frontend/coverage/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
 
 # ── Docker ─────────────────────────────────────────
 # nothing to ignore — docker-compose.yml is committed

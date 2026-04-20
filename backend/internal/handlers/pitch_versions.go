@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rivalpr/backend/internal/models"
+	"github.com/rivalpr/backend/internal/worker"
 	"gorm.io/gorm"
 )
 
@@ -82,8 +83,8 @@ func (h *Handler) GetPitchVersion(c *gin.Context) {
 }
 
 // GeneratePitch handles POST /api/pitches/:id/generate
-// Phase 1: returns a mock AI-generated pitch body so the full Epic 4 flow is testable.
-// Phase 3: replace mockGenerate with real Anthropic Claude API call.
+// Enqueues an async AI generation job and returns 202 Accepted.
+// The client should poll GET /api/pitches/:id/versions to retrieve the result.
 func (h *Handler) GeneratePitch(c *gin.Context) {
 	userID := c.MustGet("userID").(uuid.UUID)
 
@@ -118,7 +119,6 @@ func (h *Handler) GeneratePitch(c *gin.Context) {
 	nextVersion := maxVersion + 1
 
 	// Build context strings.
-	journalistName := pitch.Journalist.Name
 	outletName := pitch.Journalist.Outlet.Name
 	if outletName == "" {
 		outletName = "their publication"
@@ -127,7 +127,6 @@ func (h *Handler) GeneratePitch(c *gin.Context) {
 	if niche == "" {
 		niche = "general"
 	}
-	clientName := pitch.Client.Name
 
 	campaignTitle := ""
 	contextText := pitch.ContextBrief
@@ -142,60 +141,47 @@ func (h *Handler) GeneratePitch(c *gin.Context) {
 		}
 	}
 	if contextText == "" {
-		contextText = fmt.Sprintf("%s is launching an exciting new initiative that would interest %s readers.", clientName, niche)
+		contextText = fmt.Sprintf(
+			"%s is launching an exciting new initiative that would interest %s readers.",
+			pitch.Client.Name, niche,
+		)
 	}
 
-	// Compile the prompt snapshot (what would be sent to the real AI).
-	prompt := fmt.Sprintf(
-		"Generate a personalized pitch email for journalist %s at %s (niche: %s) on behalf of client %s.",
-		journalistName, outletName, niche, clientName,
-	)
-	if campaignTitle != "" {
-		prompt += fmt.Sprintf(" Campaign context: %s.", campaignTitle)
+	// Look up CRM relationship score for tone calibration.
+	var crmScore int
+	var rel models.CrmRelationship
+	if err := h.DB.Where("user_id = ? AND journalist_id = ?", userID, pitch.JournalistID).
+		First(&rel).Error; err == nil {
+		crmScore = rel.RelationshipScore
 	}
-	prompt += fmt.Sprintf(" Key context: %s", contextText)
 
-	// Mock AI response — template-generated to simulate real output.
-	body := fmt.Sprintf(`Subject: Exclusive Story Opportunity for %s — %s
-
-Dear %s,
-
-I hope this message finds you well. I'm reaching out on behalf of %s with a story that I believe would resonate strongly with your %s readers at %s.
-
-%s
-
-This is a unique opportunity that aligns perfectly with the stories your audience cares about. I'd love to set up a 15-minute call to walk you through the details and answer any questions you might have.
-
-Are you available for a brief conversation this week? I'm happy to work around your schedule.
-
-Best regards,
-[Your Name]
-[Agency Name]
-[Phone Number]
-
-P.S. I've prepared an exclusive press kit with additional data and visuals — happy to share upon request.
-
----
-[Mock AI Generation — v%d | Real Anthropic Claude integration coming in Phase 3]`,
-		outletName, clientName,
-		journalistName,
-		clientName,
-		niche, outletName,
-		contextText,
-		nextVersion,
+	// Compile the prompt snapshot stored alongside the version for auditability.
+	snapshot := fmt.Sprintf(
+		"Journalist: %s @ %s (niche: %s) | Client: %s | Campaign: %s | CRM score: %d/10 | Context: %s",
+		pitch.Journalist.Name, outletName, niche, pitch.Client.Name, campaignTitle, crmScore, contextText,
 	)
 
-	version := models.PitchVersion{
-		PitchID:         pitchID,
-		VersionNumber:   nextVersion,
-		AIGeneratedBody: body,
-		PromptSnapshot:  prompt,
+	job := worker.PitchJob{
+		PitchID:        pitchID,
+		VersionNumber:  nextVersion,
+		PromptSnapshot: snapshot,
+		JournalistName: pitch.Journalist.Name,
+		OutletName:     outletName,
+		Niche:          niche,
+		ClientName:     pitch.Client.Name,
+		CampaignTitle:  campaignTitle,
+		ContextText:    contextText,
+		CRMScore:       crmScore,
 	}
 
-	if err := h.DB.Create(&version).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save generated pitch version"})
+	if !h.Worker.Enqueue(job) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "generation queue is full, please retry shortly"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, version)
+	c.JSON(http.StatusAccepted, gin.H{
+		"message":        "generation queued",
+		"pitch_id":       pitchID,
+		"version_number": nextVersion,
+	})
 }
