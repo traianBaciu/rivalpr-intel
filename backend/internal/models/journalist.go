@@ -8,16 +8,16 @@ import (
 )
 
 // Journalist represents a media contact linked to an outlet.
-// User-scoped: each user maintains their own journalist database.
+// Agency-wide shared record — visible to all authenticated users.
+// AddedBy tracks who created the record. Email is globally unique.
 // Supports soft delete.
-// Composite unique: (user_id, email) — same journalist can exist for different users.
 type Journalist struct {
 	ID        uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID    uuid.UUID      `gorm:"type:uuid;not null;index;uniqueIndex:idx_journalist_user_email" json:"user_id"`
+	AddedBy   *uuid.UUID     `gorm:"type:uuid;index" json:"added_by"`
 	OutletID  uuid.UUID      `gorm:"type:uuid;not null;index" json:"outlet_id"`
 	Outlet    Outlet         `gorm:"foreignKey:OutletID;references:ID" json:"outlet,omitempty"`
 	Name      string         `gorm:"not null" json:"name"`
-	Email     string         `gorm:"not null;uniqueIndex:idx_journalist_user_email" json:"email"`
+	Email     string         `gorm:"not null;uniqueIndex" json:"email"`
 	Niche     string         `json:"niche"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

@@ -1,6 +1,6 @@
 # RivalPR Intel
 
-A PR Agency CRM and Outreach Tracker. Manage clients, track media contacts, score journalist relationships, and generate personalised pitch emails using Anthropic Claude AI — all scoped to your account.
+A PR Agency CRM and Outreach Tracker. Manage clients, track media contacts, score journalist relationships, and generate personalised pitch emails using Google Gemini AI — all scoped to your account.
 
 ---
 
@@ -57,17 +57,17 @@ The backend uses `air` for hot-reload — saving any `.go` file automatically re
 
 ## Environment Variables
 
-| Variable              | Required | Default                 | Description                                |
-| --------------------- | -------- | ----------------------- | ------------------------------------------ |
-| `DATABASE_URL`        | Yes      | (see .env.example)      | PostgreSQL connection string               |
-| `JWT_SECRET`          | Yes      | —                       | Token signing key — **min 32 characters**  |
-| `POSTGRES_USER`       | Yes      | `rivalpr`               | Database user (used by postgres container) |
-| `POSTGRES_PASSWORD`   | Yes      | `rivalpr_secret`        | Database password                          |
-| `POSTGRES_DB`         | Yes      | `rivalpr`               | Database name                              |
-| `BCRYPT_COST`         | No       | `12`                    | bcrypt work factor (min 10)                |
-| `AI_RATE_LIMIT_RPM`   | No       | `20`                    | AI generation requests per user per minute |
-| `ANTHROPIC_API_KEY`   | No       | —                       | Required for real AI generation (Phase 3)  |
-| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:8080` | Backend URL for the frontend               |
+| Variable              | Required | Default                 | Description                                                                                     |
+| --------------------- | -------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`        | Yes      | (see .env.example)      | PostgreSQL connection string                                                                    |
+| `JWT_SECRET`          | Yes      | —                       | Token signing key — **min 32 characters**                                                       |
+| `POSTGRES_USER`       | Yes      | `rivalpr`               | Database user (used by postgres container)                                                      |
+| `POSTGRES_PASSWORD`   | Yes      | `rivalpr_secret`        | Database password                                                                               |
+| `POSTGRES_DB`         | Yes      | `rivalpr`               | Database name                                                                                   |
+| `BCRYPT_COST`         | No       | `12`                    | bcrypt work factor (min 10)                                                                     |
+| `AI_RATE_LIMIT_RPM`   | No       | `20`                    | AI generation requests per user per minute                                                      |
+| `GEMINI_API_KEY`      | No       | —                       | Required for real AI generation; get free at [aistudio.google.com](https://aistudio.google.com) |
+| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:8080` | Backend URL for the frontend                                                                    |
 
 ---
 
@@ -149,7 +149,7 @@ Create Pitch (client: Acme, journalist: Sarah Chen, campaign: Q2 Launch)
   └── GET  /pitches/:id/versions  →  compare v1 and v2, pick the best
 ```
 
-> **Note:** AI generation currently returns a mock template response. Real Anthropic Claude integration is Phase 3 (requires `ANTHROPIC_API_KEY`).
+> **Note:** AI generation currently returns a mock template response when no key is configured. Real Gemini integration requires `GEMINI_API_KEY` (free tier available at [aistudio.google.com](https://aistudio.google.com)).
 
 ---
 
@@ -201,7 +201,7 @@ A top-level view showing campaign health: how many pitches were sent vs replied,
 | Backend   | Go 1.26 · Gin · GORM                            |
 | Database  | PostgreSQL 16 (alpine)                          |
 | Auth      | JWT (HS256) · bcrypt cost ≥ 12                  |
-| AI        | Anthropic Claude (claude-3-5-sonnet)            |
+| AI        | Google Gemini 1.5 Flash                         |
 | Frontend  | Next.js (App Router) · shadcn/ui · Tailwind CSS |
 | Container | Docker · docker-compose                         |
 
@@ -257,8 +257,8 @@ The application follows a standard modern **decoupled architecture**, containeri
 │         │   + Job Channel             │                   │
 │         │          │                  │                   │
 │         │  ┌───────▼────────┐        │                   │
-│         │  │ Anthropic Claude│        │                   │
-│         │  │ claude-3-5-sonnet        │                   │
+│         │  │  Google Gemini  │        │                   │
+│         │  │ gemini-1.5-flash         │                   │
 │         │  └────────────────┘        │                   │
 │         └────────────────────────────┘                   │
 └──────────┬────────────────────────────────────────────────┘
@@ -281,7 +281,7 @@ The application follows a standard modern **decoupled architecture**, containeri
 | Backend       | Go (Golang) + Gin        | Stateless REST API                 |
 | ORM           | GORM                     | PostgreSQL driver                  |
 | Database      | PostgreSQL               | Alpine image, persistent volume    |
-| AI            | Anthropic Claude API     | claude-3-5-sonnet                  |
+| AI            | Google Gemini API        | gemini-1.5-flash                   |
 | Auth          | JWT                      | Gin middleware, bcrypt (cost ≥ 12) |
 | Container     | Docker + docker-compose  | 3 isolated containers              |
 
@@ -425,7 +425,7 @@ Table pitch_versions {
   pitch_id          uuid      [not null]
   version_number    int       [not null, note: 'increments per pitch']
   ai_generated_body text      [not null]
-  prompt_snapshot   text      [note: 'exact prompt sent to Claude — for debugging & audit']
+  prompt_snapshot   text      [note: 'exact prompt sent to Gemini — for debugging & audit']
   created_at        timestamp [default: `now()`]
   Note: 'Stores each AI generation attempt; user picks the best before sending'
 
@@ -473,7 +473,7 @@ pitches ──< pitch_versions
 
 ## 6. AI Integration & Cost Control
 
-**Model:** `claude-3-5-sonnet` via Anthropic REST API.
+**Model:** `gemini-1.5-flash` via Google Gemini REST API.
 
 ### Context Injection pattern
 
@@ -490,13 +490,13 @@ pitches ──< pitch_versions
   [Async Worker (goroutine pool)]
         │
         ├── compile structured prompt
-        ├── POST → Anthropic API
+        ├── POST → Google Gemini API
         │
         └── on success: INSERT pitch_versions (version_number++)
                         UPDATE pitches.status = 'draft'
 ```
 
-The Go backend is the sole keeper of the Anthropic API key — it is never exposed to the frontend. The HTTP handler returns `202 Accepted` immediately; the frontend polls `GET /pitches/:id/versions` for results.
+The Go backend is the sole keeper of the Gemini API key — it is never exposed to the frontend. The HTTP handler returns `202 Accepted` immediately; the frontend polls `GET /pitches/:id/versions` for results.
 
 ### Rate Limiting
 
@@ -600,7 +600,7 @@ volumes:
 | Variable              | Container | Description                                   |
 | --------------------- | --------- | --------------------------------------------- |
 | `DATABASE_URL`        | backend   | PostgreSQL connection string                  |
-| `ANTHROPIC_API_KEY`   | backend   | Never passed to frontend                      |
+| `GEMINI_API_KEY`      | backend   | Never passed to frontend                      |
 | `JWT_SECRET`          | backend   | Token signing key (min 32 chars)              |
 | `BCRYPT_COST`         | backend   | bcrypt work factor (default: 12)              |
 | `AI_RATE_LIMIT_RPM`   | backend   | Requests per minute per user for AI endpoints |

@@ -17,7 +17,7 @@ export interface Client {
 
 export interface Outlet {
   id: string;
-  user_id: string;
+  added_by?: string;
   name: string;
   website: string;
   country: string;
@@ -27,7 +27,7 @@ export interface Outlet {
 
 export interface Journalist {
   id: string;
-  user_id: string;
+  added_by?: string;
   outlet_id: string;
   outlet: Outlet;
   name: string;
@@ -80,8 +80,45 @@ export interface PitchVersion {
   version_number: number;
   ai_generated_body: string;
   prompt_snapshot: string;
+  generation_params: string;
   created_at: string;
 }
+
+export interface GenerationParams {
+  tone?: string;
+  length?: string;
+  angle?: string;
+  custom_instructions?: string;
+  reference_version_id?: string;
+  refinement_note?: string;
+}
+
+export interface PromptTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  tone: string;
+  length: string;
+  angle: string;
+  custom_instructions: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ToneOption =
+  | ""
+  | "formal"
+  | "conversational"
+  | "urgent"
+  | "enthusiastic";
+export type LengthOption = "" | "concise" | "standard" | "detailed";
+export type AngleOption =
+  | ""
+  | "news_hook"
+  | "exclusive"
+  | "follow_up"
+  | "thought_leadership"
+  | "event";
 
 export type PitchStatus = "draft" | "sent" | "opened" | "replied";
 
@@ -172,6 +209,31 @@ export interface CreatePitchRequest {
 export interface UpdatePitchRequest {
   status?: PitchStatus;
   context_brief?: string;
+}
+
+export interface GeneratePitchRequest {
+  tone?: string;
+  length?: string;
+  angle?: string;
+  custom_instructions?: string;
+  reference_version_id?: string;
+  refinement_note?: string;
+}
+
+export interface CreatePromptTemplateRequest {
+  name: string;
+  tone?: string;
+  length?: string;
+  angle?: string;
+  custom_instructions?: string;
+}
+
+export interface UpdatePromptTemplateRequest {
+  name?: string;
+  tone?: string;
+  length?: string;
+  angle?: string;
+  custom_instructions?: string;
 }
 
 // ===== Response types =====

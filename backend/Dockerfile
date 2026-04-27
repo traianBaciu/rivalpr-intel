@@ -1,5 +1,5 @@
 # ── Development image with air hot-reload ─────────────────────────────────────
-FROM golang:1.24-alpine
+FROM golang:1.25-alpine
 
 # Allow Go to auto-download newer toolchains required by dependencies
 ENV GOTOOLCHAIN=auto

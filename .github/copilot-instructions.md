@@ -60,7 +60,7 @@ Implementation plan: `.github/prompts/plan-rivalPrIntel.prompt.md`
 | Variable              | Container | Notes                        |
 | --------------------- | --------- | ---------------------------- |
 | `DATABASE_URL`        | backend   | PostgreSQL connection string |
-| `ANTHROPIC_API_KEY`   | backend   | Never passed to frontend     |
+| `GEMINI_API_KEY`      | backend   | Never passed to frontend     |
 | `JWT_SECRET`          | backend   | Min 32 characters            |
 | `BCRYPT_COST`         | backend   | Default: 12                  |
 | `AI_RATE_LIMIT_RPM`   | backend   | Per-user AI rate limit       |

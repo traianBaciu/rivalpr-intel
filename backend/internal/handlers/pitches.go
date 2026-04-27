@@ -119,7 +119,7 @@ func (h *Handler) CreatePitch(c *gin.Context) {
 		return
 	}
 	var journalist models.Journalist
-	if err := h.DB.Where("id = ? AND user_id = ?", journalistID, userID).First(&journalist).Error; err != nil {
+	if err := h.DB.First(&journalist, "id = ?", journalistID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "journalist not found"})
 		return
 	}

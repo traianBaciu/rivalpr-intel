@@ -8,12 +8,12 @@ import (
 
 // Config holds all configuration loaded from environment variables.
 type Config struct {
-	DatabaseURL     string
-	JWTSecret       string
-	BcryptCost      int
-	AIRateLimitRPM  int
-	AnthropicAPIKey string
-	Port            string
+	DatabaseURL    string
+	JWTSecret      string
+	BcryptCost     int
+	AIRateLimitRPM int
+	GeminiAPIKey   string
+	Port           string
 }
 
 // Load reads environment variables and returns a validated Config.
@@ -54,12 +54,12 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:     dbURL,
-		JWTSecret:       jwtSecret,
-		BcryptCost:      bcryptCost,
-		AIRateLimitRPM:  aiRPM,
-		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
-		Port:            getEnvOrDefault("PORT", "8080"),
+		DatabaseURL:    dbURL,
+		JWTSecret:      jwtSecret,
+		BcryptCost:     bcryptCost,
+		AIRateLimitRPM: aiRPM,
+		GeminiAPIKey:   os.Getenv("GEMINI_API_KEY"),
+		Port:           getEnvOrDefault("PORT", "8080"),
 	}, nil
 }
 

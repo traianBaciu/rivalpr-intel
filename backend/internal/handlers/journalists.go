@@ -18,14 +18,8 @@ type createJournalistRequest struct {
 	Niche    string `json:"niche"`
 }
 
-type updateJournalistRequest struct {
-	OutletID string `json:"outlet_id"`
-	Name     string `json:"name"`
-	Email    string `json:"email" binding:"omitempty,email"`
-	Niche    string `json:"niche"`
-}
-
 // ListJournalists handles GET /api/journalists
+// Returns only journalists the current user is tracking (has a CRM relationship with).
 // Query params: ?page=1&limit=20&outlet_id=<uuid>
 func (h *Handler) ListJournalists(c *gin.Context) {
 	userID := c.MustGet("userID").(uuid.UUID)
@@ -40,7 +34,8 @@ func (h *Handler) ListJournalists(c *gin.Context) {
 	}
 	offset := (page - 1) * limit
 
-	query := h.DB.Where("journalists.user_id = ?", userID).Preload("Outlet")
+	query := h.DB.Preload("Outlet").
+		Joins("JOIN crm_relationships cr ON cr.journalist_id = journalists.id AND cr.user_id = ?", userID)
 
 	if outletIDStr := c.Query("outlet_id"); outletIDStr != "" {
 		outletID, err := uuid.Parse(outletIDStr)
@@ -68,10 +63,52 @@ func (h *Handler) ListJournalists(c *gin.Context) {
 	})
 }
 
-// GetJournalist handles GET /api/journalists/:id
-func (h *Handler) GetJournalist(c *gin.Context) {
+// ListAgencyJournalists handles GET /api/journalists/agency
+// Returns all agency journalists not yet tracked by the current user.
+// Query params: ?page=1&limit=50&search=<str>&niche=<str>
+func (h *Handler) ListAgencyJournalists(c *gin.Context) {
 	userID := c.MustGet("userID").(uuid.UUID)
 
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	offset := (page - 1) * limit
+
+	query := h.DB.Preload("Outlet").
+		Where("id NOT IN (SELECT journalist_id FROM crm_relationships WHERE user_id = ?)", userID)
+
+	if search := c.Query("search"); search != "" {
+		like := "%" + search + "%"
+		query = query.Where("journalists.name ILIKE ? OR journalists.email ILIKE ?", like, like)
+	}
+	if niche := c.Query("niche"); niche != "" {
+		query = query.Where("journalists.niche = ?", niche)
+	}
+
+	var total int64
+	query.Model(&models.Journalist{}).Count(&total)
+
+	var journalists []models.Journalist
+	if err := query.Offset(offset).Limit(limit).Find(&journalists).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch agency journalists"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  journalists,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+// GetJournalist handles GET /api/journalists/:id
+func (h *Handler) GetJournalist(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid journalist ID"})
@@ -79,7 +116,7 @@ func (h *Handler) GetJournalist(c *gin.Context) {
 	}
 
 	var journalist models.Journalist
-	if err := h.DB.Preload("Outlet").Where("id = ? AND user_id = ?", id, userID).First(&journalist).Error; err != nil {
+	if err := h.DB.Preload("Outlet").First(&journalist, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "journalist not found"})
 			return
@@ -92,6 +129,7 @@ func (h *Handler) GetJournalist(c *gin.Context) {
 }
 
 // CreateJournalist handles POST /api/journalists
+// Adds a journalist to the agency-shared database. AddedBy is set from JWT.
 func (h *Handler) CreateJournalist(c *gin.Context) {
 	userID := c.MustGet("userID").(uuid.UUID)
 
@@ -107,15 +145,15 @@ func (h *Handler) CreateJournalist(c *gin.Context) {
 		return
 	}
 
-	// Validate outlet belongs to requesting user.
+	// Validate outlet exists in the agency database (no user ownership check).
 	var outlet models.Outlet
-	if err := h.DB.Where("id = ? AND user_id = ?", outletID, userID).First(&outlet).Error; err != nil {
+	if err := h.DB.First(&outlet, "id = ?", outletID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "outlet not found"})
 		return
 	}
 
 	journalist := models.Journalist{
-		UserID:   userID,
+		AddedBy:  &userID,
 		OutletID: outletID,
 		Name:     req.Name,
 		Email:    req.Email,
@@ -132,88 +170,14 @@ func (h *Handler) CreateJournalist(c *gin.Context) {
 }
 
 // UpdateJournalist handles PUT /api/journalists/:id
+// Journalists are agency-wide shared records and cannot be modified after creation.
 func (h *Handler) UpdateJournalist(c *gin.Context) {
-	userID := c.MustGet("userID").(uuid.UUID)
-
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid journalist ID"})
-		return
-	}
-
-	var journalist models.Journalist
-	if err := h.DB.Where("id = ? AND user_id = ?", id, userID).First(&journalist).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "journalist not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch journalist"})
-		return
-	}
-
-	var req updateJournalistRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if req.OutletID != "" {
-		outletID, err := uuid.Parse(req.OutletID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid outlet_id"})
-			return
-		}
-		// Validate new outlet belongs to requesting user.
-		var outlet models.Outlet
-		if err := h.DB.Where("id = ? AND user_id = ?", outletID, userID).First(&outlet).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "outlet not found"})
-			return
-		}
-		journalist.OutletID = outletID
-	}
-	if req.Name != "" {
-		journalist.Name = req.Name
-	}
-	if req.Email != "" {
-		journalist.Email = req.Email
-	}
-	if req.Niche != "" {
-		journalist.Niche = req.Niche
-	}
-
-	if err := h.DB.Save(&journalist).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update journalist"})
-		return
-	}
-
-	h.DB.Preload("Outlet").First(&journalist, journalist.ID)
-	c.JSON(http.StatusOK, journalist)
+	c.JSON(http.StatusForbidden, gin.H{"error": "journalists are shared agency records and cannot be modified"})
 }
 
-// DeleteJournalist handles DELETE /api/journalists/:id (soft delete)
+// DeleteJournalist handles DELETE /api/journalists/:id
+// Journalists are agency-wide shared records and cannot be deleted.
+// To stop tracking a journalist, delete the CRM relationship instead.
 func (h *Handler) DeleteJournalist(c *gin.Context) {
-	userID := c.MustGet("userID").(uuid.UUID)
-
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid journalist ID"})
-		return
-	}
-
-	var journalist models.Journalist
-	if err := h.DB.Where("id = ? AND user_id = ?", id, userID).First(&journalist).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "journalist not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch journalist"})
-		return
-	}
-
-	if err := h.DB.Delete(&journalist).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete journalist"})
-		return
-	}
-
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusForbidden, gin.H{"error": "journalists are shared agency records and cannot be deleted; delete the CRM relationship to stop tracking"})
 }

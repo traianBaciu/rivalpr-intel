@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -82,6 +83,27 @@ func (h *Handler) GetPitchVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, version)
 }
 
+// generateRequest holds optional AI generation controls.
+// All fields are optional — an empty body produces the same result as the original endpoint.
+type generateRequest struct {
+	Tone               string `json:"tone"`
+	Length             string `json:"length"`
+	Angle              string `json:"angle"`
+	CustomInstructions string `json:"custom_instructions"`
+	ReferenceVersionID string `json:"reference_version_id"`
+	RefinementNote     string `json:"refinement_note"`
+}
+
+// generationParamsJSON is serialized and stored on the PitchVersion for auditability.
+type generationParamsJSON struct {
+	Tone               string `json:"tone,omitempty"`
+	Length             string `json:"length,omitempty"`
+	Angle              string `json:"angle,omitempty"`
+	CustomInstructions string `json:"custom_instructions,omitempty"`
+	ReferenceVersionID string `json:"reference_version_id,omitempty"`
+	RefinementNote     string `json:"refinement_note,omitempty"`
+}
+
 // GeneratePitch handles POST /api/pitches/:id/generate
 // Enqueues an async AI generation job and returns 202 Accepted.
 // The client should poll GET /api/pitches/:id/versions to retrieve the result.
@@ -91,6 +113,24 @@ func (h *Handler) GeneratePitch(c *gin.Context) {
 	pitchID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pitch ID"})
+		return
+	}
+
+	// Bind optional generation controls (empty body is fine).
+	var req generateRequest
+	_ = c.ShouldBindJSON(&req)
+
+	// Validate enum values.
+	if req.Tone != "" && !validTones[req.Tone] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tone: must be one of formal, conversational, urgent, enthusiastic"})
+		return
+	}
+	if req.Length != "" && !validLengths[req.Length] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid length: must be one of concise, standard, detailed"})
+		return
+	}
+	if req.Angle != "" && !validAngles[req.Angle] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid angle: must be one of news_hook, exclusive, follow_up, thought_leadership, event"})
 		return
 	}
 
@@ -160,18 +200,72 @@ func (h *Handler) GeneratePitch(c *gin.Context) {
 		"Journalist: %s @ %s (niche: %s) | Client: %s | Campaign: %s | CRM score: %d/10 | Context: %s",
 		pitch.Journalist.Name, outletName, niche, pitch.Client.Name, campaignTitle, crmScore, contextText,
 	)
+	if req.Tone != "" {
+		snapshot += fmt.Sprintf(" | Tone: %s", req.Tone)
+	}
+	if req.Length != "" {
+		snapshot += fmt.Sprintf(" | Length: %s", req.Length)
+	}
+	if req.Angle != "" {
+		snapshot += fmt.Sprintf(" | Angle: %s", req.Angle)
+	}
+	if req.CustomInstructions != "" {
+		snapshot += fmt.Sprintf(" | Instructions: %s", req.CustomInstructions)
+	}
+
+	// Resolve reference version body if refining a previous version.
+	var referenceBody string
+	if req.ReferenceVersionID != "" {
+		refID, err := uuid.Parse(req.ReferenceVersionID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid reference_version_id"})
+			return
+		}
+		var refVersion models.PitchVersion
+		if err := h.DB.Where("id = ? AND pitch_id = ?", refID, pitchID).First(&refVersion).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "reference version not found for this pitch"})
+			return
+		}
+		referenceBody = refVersion.AIGeneratedBody
+		snapshot += fmt.Sprintf(" | Refining v%d", refVersion.VersionNumber)
+	}
+
+	// Serialize generation params as JSON for the version record.
+	paramsJSON, _ := json.Marshal(generationParamsJSON{
+		Tone:               req.Tone,
+		Length:             req.Length,
+		Angle:              req.Angle,
+		CustomInstructions: req.CustomInstructions,
+		ReferenceVersionID: req.ReferenceVersionID,
+		RefinementNote:     req.RefinementNote,
+	})
+
+	// Load sender email for sign-off.
+	var user models.User
+	senderEmail := ""
+	if err := h.DB.First(&user, "id = ?", userID).Error; err == nil {
+		senderEmail = user.Email
+	}
 
 	job := worker.PitchJob{
-		PitchID:        pitchID,
-		VersionNumber:  nextVersion,
-		PromptSnapshot: snapshot,
-		JournalistName: pitch.Journalist.Name,
-		OutletName:     outletName,
-		Niche:          niche,
-		ClientName:     pitch.Client.Name,
-		CampaignTitle:  campaignTitle,
-		ContextText:    contextText,
-		CRMScore:       crmScore,
+		PitchID:            pitchID,
+		VersionNumber:      nextVersion,
+		PromptSnapshot:     snapshot,
+		GenerationParams:   string(paramsJSON),
+		JournalistName:     pitch.Journalist.Name,
+		OutletName:         outletName,
+		Niche:              niche,
+		ClientName:         pitch.Client.Name,
+		CampaignTitle:      campaignTitle,
+		ContextText:        contextText,
+		CRMScore:           crmScore,
+		SenderEmail:        senderEmail,
+		Tone:               req.Tone,
+		Length:             req.Length,
+		Angle:              req.Angle,
+		CustomInstructions: req.CustomInstructions,
+		RefinementNote:     req.RefinementNote,
+		ReferenceBody:      referenceBody,
 	}
 
 	if !h.Worker.Enqueue(job) {

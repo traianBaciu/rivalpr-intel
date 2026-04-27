@@ -12,12 +12,12 @@ import (
 
 type createCrmRelationshipRequest struct {
 	JournalistID      string `json:"journalist_id" binding:"required"`
-	RelationshipScore int    `json:"relationship_score" binding:"required,min=1,max=10"`
+	RelationshipScore int    `json:"relationship_score" binding:"omitempty,min=0,max=10"`
 	PrivateNotes      string `json:"private_notes"`
 }
 
 type updateCrmRelationshipRequest struct {
-	RelationshipScore int    `json:"relationship_score" binding:"omitempty,min=1,max=10"`
+	RelationshipScore int    `json:"relationship_score" binding:"omitempty,min=0,max=10"`
 	PrivateNotes      string `json:"private_notes"`
 }
 
@@ -75,9 +75,9 @@ func (h *Handler) CreateCrmRelationship(c *gin.Context) {
 		return
 	}
 
-	// Validate journalist belongs to requesting user.
+	// Journalist is an agency-wide shared record — no user ownership check needed.
 	var journalist models.Journalist
-	if err := h.DB.Where("id = ? AND user_id = ?", journalistID, userID).First(&journalist).Error; err != nil {
+	if err := h.DB.First(&journalist, "id = ?", journalistID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "journalist not found"})
 		return
 	}

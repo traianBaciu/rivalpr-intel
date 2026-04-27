@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   Journalist,
@@ -20,8 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Dialog,
@@ -47,7 +45,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Download } from "lucide-react";
 
 export default function JournalistsPage() {
   // === Outlets state ===
@@ -58,7 +56,6 @@ export default function JournalistsPage() {
     country: "",
   });
   const [outletDialogOpen, setOutletDialogOpen] = useState(false);
-  const [editingOutlet, setEditingOutlet] = useState<Outlet | null>(null);
 
   // === Journalists state ===
   const [journalists, setJournalists] = useState<Journalist[]>([]);
@@ -70,10 +67,14 @@ export default function JournalistsPage() {
       niche: "",
     });
   const [journalistDialogOpen, setJournalistDialogOpen] = useState(false);
-  const [editingJournalist, setEditingJournalist] =
-    useState<Journalist | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+
+  // === Import dialog state ===
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importSearch, setImportSearch] = useState("");
+  const [importNiche, setImportNiche] = useState("all");
+  const [agencyJournalists, setAgencyJournalists] = useState<Journalist[]>([]);
 
   // === CRM state ===
   const [relationships, setRelationships] = useState<CrmRelationship[]>([]);
@@ -115,6 +116,17 @@ export default function JournalistsPage() {
     []
   );
 
+  const fetchAgencyJournalists = useCallback(async () => {
+    try {
+      const res = await api.get<PaginatedResponse<Journalist>>(
+        `/api/journalists/agency?limit=200`
+      );
+      setAgencyJournalists(res?.data || []);
+    } catch {
+      toast.error("Failed to load agency journalists");
+    }
+  }, []);
+
   const fetchRelationships = useCallback(async () => {
     try {
       const data = await api.get<CrmRelationship[]>("/api/crm/relationships");
@@ -130,33 +142,22 @@ export default function JournalistsPage() {
     );
   }, [fetchOutlets, fetchJournalists, fetchRelationships]);
 
+  // Fetch agency pool when import dialog opens
+  useEffect(() => {
+    if (importDialogOpen) fetchAgencyJournalists();
+  }, [importDialogOpen, fetchAgencyJournalists]);
+
   // === Outlet handlers ===
   function openCreateOutlet() {
-    setEditingOutlet(null);
     setOutletForm({ name: "", website: "", country: "" });
-    setOutletDialogOpen(true);
-  }
-
-  function openEditOutlet(outlet: Outlet) {
-    setEditingOutlet(outlet);
-    setOutletForm({
-      name: outlet.name,
-      website: outlet.website,
-      country: outlet.country,
-    });
     setOutletDialogOpen(true);
   }
 
   async function handleOutletSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      if (editingOutlet) {
-        await api.put(`/api/outlets/${editingOutlet.id}`, outletForm);
-        toast.success("Outlet updated");
-      } else {
-        await api.post("/api/outlets", outletForm);
-        toast.success("Outlet created");
-      }
+      await api.post("/api/outlets", outletForm);
+      toast.success("Outlet created");
       setOutletDialogOpen(false);
       fetchOutlets();
     } catch (err) {
@@ -164,65 +165,22 @@ export default function JournalistsPage() {
     }
   }
 
-  async function handleDeleteOutlet(id: string) {
-    if (!confirm("Delete this outlet?")) return;
-    try {
-      await api.del(`/api/outlets/${id}`);
-      toast.success("Outlet deleted");
-      fetchOutlets();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Delete failed");
-    }
-  }
-
   // === Journalist handlers ===
   function openCreateJournalist() {
-    setEditingJournalist(null);
     setJournalistForm({ outlet_id: "", name: "", email: "", niche: "" });
-    setJournalistDialogOpen(true);
-  }
-
-  function openEditJournalist(j: Journalist) {
-    setEditingJournalist(j);
-    setJournalistForm({
-      outlet_id: j.outlet_id,
-      name: j.name,
-      email: j.email,
-      niche: j.niche,
-    });
     setJournalistDialogOpen(true);
   }
 
   async function handleJournalistSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      if (editingJournalist) {
-        await api.put(
-          `/api/journalists/${editingJournalist.id}`,
-          journalistForm
-        );
-        toast.success("Journalist updated");
-      } else {
-        await api.post("/api/journalists", journalistForm);
-        toast.success("Journalist created");
-      }
+      await api.post("/api/journalists", journalistForm);
+      toast.success("Journalist added to agency database");
       setJournalistDialogOpen(false);
       setPage(1);
       fetchJournalists(1);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Operation failed");
-    }
-  }
-
-  async function handleDeleteJournalist(id: string) {
-    if (!confirm("Delete this journalist?")) return;
-    try {
-      await api.del(`/api/journalists/${id}`);
-      toast.success("Journalist deleted");
-      setPage(1);
-      fetchJournalists(1);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Delete failed");
     }
   }
 
@@ -233,13 +191,33 @@ export default function JournalistsPage() {
       relationship_score: 5,
       private_notes: "",
     });
+    setImportDialogOpen(false);
     setCrmDialogOpen(true);
+  }
+
+  async function handleImport(journalistId: string) {
+    try {
+      await api.post("/api/crm/relationships", { journalist_id: journalistId, relationship_score: 0 });
+      toast.success("Journalist added to your list");
+      await Promise.all([fetchJournalists(1), fetchAgencyJournalists(), fetchRelationships()]);
+      setPage(1);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Import failed");
+    }
   }
 
   async function handleCrmSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await api.post("/api/crm/relationships", crmForm);
+      const existing = relationships.find((r) => r.journalist_id === crmForm.journalist_id);
+      if (existing) {
+        await api.put(`/api/crm/relationships/${existing.id}`, {
+          relationship_score: crmForm.relationship_score,
+          private_notes: crmForm.private_notes,
+        });
+      } else {
+        await api.post("/api/crm/relationships", crmForm);
+      }
       toast.success("Relationship saved");
       setCrmDialogOpen(false);
       fetchRelationships();
@@ -263,6 +241,26 @@ export default function JournalistsPage() {
     return relationships.find((r) => r.journalist_id === journalistId);
   }
 
+  // === Import dialog computed values ===
+  const allNiches = useMemo(() => {
+    const niches = new Set(agencyJournalists.map((j) => j.niche).filter(Boolean));
+    return Array.from(niches).sort();
+  }, [agencyJournalists]);
+
+  const importList = useMemo(() => {
+    return agencyJournalists.filter((j) => {
+      if (importNiche !== "all" && j.niche !== importNiche) return false;
+      if (importSearch) {
+        const q = importSearch.toLowerCase();
+        return (
+          j.name.toLowerCase().includes(q) ||
+          j.email.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [agencyJournalists, importNiche, importSearch]);
+
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>;
   }
@@ -279,7 +277,92 @@ export default function JournalistsPage() {
 
         {/* === JOURNALISTS TAB === */}
         <TabsContent value="journalists" className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {/* Import from Agency */}
+            <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+              <DialogTrigger render={<Button variant="outline" />}>
+                <Download className="mr-2 h-4 w-4" /> Import from Agency
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Import from Agency Database</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search by name or email…"
+                      value={importSearch}
+                      onChange={(e) => setImportSearch(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Select
+                      value={importNiche}
+                      onValueChange={(v) => setImportNiche(v ?? "all")}
+                    >
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All niches" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All niches</SelectItem>
+                        {allNiches.map((n) => (
+                          <SelectItem key={n} value={n}>
+                            {n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Outlet</TableHead>
+                          <TableHead>Niche</TableHead>
+                          <TableHead className="w-20"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importList.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={5}
+                              className="text-center text-muted-foreground py-8"
+                            >
+                              {agencyJournalists.length === 0
+                                ? "You've already tracked all journalists in the agency database."
+                                : "No journalists match your search."}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          importList.map((j) => (
+                            <TableRow key={j.id}>
+                              <TableCell className="font-medium">{j.name}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {j.email}
+                              </TableCell>
+                              <TableCell>{j.outlet?.name || "—"}</TableCell>
+                              <TableCell>{j.niche || "—"}</TableCell>
+                              <TableCell>
+                                <Button size="sm" onClick={() => handleImport(j.id)}>
+                                  Import
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Showing {importList.length} untracked journalist
+                    {importList.length !== 1 ? "s" : ""}.
+                  </p>                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Add Journalist */}
             <Dialog
               open={journalistDialogOpen}
               onOpenChange={setJournalistDialogOpen}
@@ -292,11 +375,7 @@ export default function JournalistsPage() {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>
-                    {editingJournalist
-                      ? "Edit Journalist"
-                      : "Add Journalist"}
-                  </DialogTitle>
+                  <DialogTitle>Add Journalist to Agency Database</DialogTitle>
                 </DialogHeader>
                 <form
                   onSubmit={handleJournalistSubmit}
@@ -362,7 +441,7 @@ export default function JournalistsPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    {editingJournalist ? "Update" : "Create"}
+                    Add to Agency Database
                   </Button>
                 </form>
               </DialogContent>
@@ -379,7 +458,6 @@ export default function JournalistsPage() {
                     <TableHead>Outlet</TableHead>
                     <TableHead>Niche</TableHead>
                     <TableHead>CRM Score</TableHead>
-                    <TableHead className="w-24">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -394,8 +472,8 @@ export default function JournalistsPage() {
                         <TableCell>{j.outlet?.name || "—"}</TableCell>
                         <TableCell>{j.niche || "—"}</TableCell>
                         <TableCell>
-                          {rel ? (
-                            <div className="flex items-center gap-2 min-w-[140px]">
+                          {rel && rel.relationship_score > 0 ? (
+                            <div className="flex items-center gap-2 min-w-35">
                               <Slider
                                 value={[rel.relationship_score]}
                                 min={1}
@@ -420,24 +498,6 @@ export default function JournalistsPage() {
                             </Button>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditJournalist(j)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteJournalist(j.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -460,7 +520,7 @@ export default function JournalistsPage() {
             </CardContent>
           </Card>
 
-          {/* CRM Dialog */}
+          {/* CRM Rate Dialog */}
           <Dialog open={crmDialogOpen} onOpenChange={setCrmDialogOpen}>
             <DialogContent>
               <DialogHeader>
@@ -521,7 +581,7 @@ export default function JournalistsPage() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>
-                    {editingOutlet ? "Edit Outlet" : "Add Outlet"}
+                    Add Outlet to Agency Database
                   </DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleOutletSubmit} className="space-y-4">
@@ -563,7 +623,7 @@ export default function JournalistsPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full">
-                    {editingOutlet ? "Update" : "Create"}
+                    Add to Agency Database
                   </Button>
                 </form>
               </DialogContent>
@@ -578,7 +638,6 @@ export default function JournalistsPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Website</TableHead>
                     <TableHead>Country</TableHead>
-                    <TableHead className="w-24">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -602,24 +661,6 @@ export default function JournalistsPage() {
                         )}
                       </TableCell>
                       <TableCell>{outlet.country || "—"}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditOutlet(outlet)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteOutlet(outlet.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

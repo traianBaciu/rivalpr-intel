@@ -48,6 +48,7 @@ func main() {
 		&models.Campaign{},
 		&models.Pitch{},
 		&models.PitchVersion{},
+		&models.PromptTemplate{},
 	); err != nil {
 		log.Fatalf("auto-migration failed: %v", err)
 	}
@@ -55,8 +56,8 @@ func main() {
 
 	// Initialise services, worker pool, and handler.
 	authService := services.NewAuthService(db, cfg)
-	anthropicClient := services.NewAnthropicClient(cfg.AnthropicAPIKey)
-	aiWorker := worker.New(db, anthropicClient)
+	geminiClient := services.NewGeminiClient(cfg.GeminiAPIKey)
+	aiWorker := worker.New(db, geminiClient)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -116,6 +117,7 @@ func main() {
 		journalists := api.Group("/journalists")
 		{
 			journalists.GET("", h.ListJournalists)
+			journalists.GET("/agency", h.ListAgencyJournalists)
 			journalists.GET("/:id", h.GetJournalist)
 			journalists.POST("", h.CreateJournalist)
 			journalists.PUT("/:id", h.UpdateJournalist)
@@ -140,6 +142,16 @@ func main() {
 			campaigns.POST("", h.CreateCampaign)
 			campaigns.PUT("/:id", h.UpdateCampaign)
 			campaigns.DELETE("/:id", h.DeleteCampaign)
+		}
+
+		// Prompt Templates
+		templates := api.Group("/prompt-templates")
+		{
+			templates.GET("", h.ListPromptTemplates)
+			templates.GET("/:id", h.GetPromptTemplate)
+			templates.POST("", h.CreatePromptTemplate)
+			templates.PUT("/:id", h.UpdatePromptTemplate)
+			templates.DELETE("/:id", h.DeletePromptTemplate)
 		}
 
 		// Pitches + versions + AI generation

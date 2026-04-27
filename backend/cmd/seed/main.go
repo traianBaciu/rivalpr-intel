@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"math/rand"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -45,304 +47,329 @@ func main() {
 // ── Seed ─────────────────────────────────────────────────────────────────────
 
 func runSeed(db *gorm.DB, cfg *config.Config) {
-	log.Println("Seeding demo data...")
+	log.Println("Seeding demo data (large-scale)…")
+	rng := rand.New(rand.NewSource(42)) // deterministic
 
-	// ── User ──────────────────────────────────────────────────────────────────
+	// ── Users ─────────────────────────────────────────────────────────────────
+	userDefs := []struct{ name, email string }{
+		{"Alice Morgan", "alice@rivalpr.com"},
+		{"Bob Singh", "bob@rivalpr.com"},
+		{"Carol Tanaka", "carol@rivalpr.com"},
+		{"Dave Okoye", "dave@rivalpr.com"},
+		{"Eve Lindström", "eve@rivalpr.com"},
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte("Demo1234!"), cfg.BcryptCost)
 	if err != nil {
-		log.Fatalf("bcrypt error: %v", err)
+		log.Fatalf("bcrypt: %v", err)
 	}
-	user := models.User{
-		Email:        "alice@rivalpr.com",
-		PasswordHash: string(hash),
-	}
-	if err := db.FirstOrCreate(&user, models.User{Email: user.Email}).Error; err != nil {
-		log.Fatalf("create user: %v", err)
-	}
-	log.Printf("  user:    %s (password: Demo1234!)", user.Email)
-
-	// ── Outlets ───────────────────────────────────────────────────────────────
-	outlets := []models.Outlet{
-		{UserID: user.ID, Name: "TechCrunch", Website: "https://techcrunch.com", Country: "US"},
-		{UserID: user.ID, Name: "Forbes Romania", Website: "https://forbes.ro", Country: "RO"},
-		{UserID: user.ID, Name: "The Verge", Website: "https://theverge.com", Country: "US"},
-	}
-	for i := range outlets {
-		if err := db.Where("user_id = ? AND name = ?", user.ID, outlets[i].Name).
-			FirstOrCreate(&outlets[i]).Error; err != nil {
-			log.Fatalf("create outlet %s: %v", outlets[i].Name, err)
+	users := make([]models.User, len(userDefs))
+	for i, u := range userDefs {
+		users[i] = models.User{Email: u.email, PasswordHash: string(hash)}
+		if err := db.Where("email = ?", u.email).FirstOrCreate(&users[i]).Error; err != nil {
+			log.Fatalf("create user %s: %v", u.email, err)
 		}
-		log.Printf("  outlet:  %s", outlets[i].Name)
+		log.Printf("  user: %s (%s)", u.name, u.email)
 	}
 
-	// ── Clients ───────────────────────────────────────────────────────────────
-	clients := []models.Client{
-		{UserID: user.ID, Name: "NovaSpark AI", Industry: "Artificial Intelligence / SaaS"},
-		{UserID: user.ID, Name: "GreenRoute Logistics", Industry: "Sustainability / Logistics"},
+	// ── Outlets (30 agency-wide) ──────────────────────────────────────────────
+	outletDefs := []struct{ name, website, country string }{
+		{"TechCrunch", "https://techcrunch.com", "US"},
+		{"The Verge", "https://theverge.com", "US"},
+		{"Wired", "https://wired.com", "US"},
+		{"Forbes", "https://forbes.com", "US"},
+		{"Bloomberg Technology", "https://bloomberg.com/technology", "US"},
+		{"Fast Company", "https://fastcompany.com", "US"},
+		{"VentureBeat", "https://venturebeat.com", "US"},
+		{"Ars Technica", "https://arstechnica.com", "US"},
+		{"MIT Technology Review", "https://technologyreview.com", "US"},
+		{"The Information", "https://theinformation.com", "US"},
+		{"Forbes Romania", "https://forbes.ro", "RO"},
+		{"Ziarul Financiar", "https://zf.ro", "RO"},
+		{"G4Media", "https://g4media.ro", "RO"},
+		{"Der Spiegel", "https://spiegel.de", "DE"},
+		{"Handelsblatt", "https://handelsblatt.com", "DE"},
+		{"t3n", "https://t3n.de", "DE"},
+		{"Le Monde", "https://lemonde.fr", "FR"},
+		{"Challenges", "https://challenges.fr", "FR"},
+		{"El País", "https://elpais.com", "ES"},
+		{"Expansión", "https://expansion.com", "ES"},
+		{"The Guardian", "https://theguardian.com", "UK"},
+		{"Financial Times", "https://ft.com", "UK"},
+		{"The Times", "https://thetimes.co.uk", "UK"},
+		{"CNBC", "https://cnbc.com", "US"},
+		{"Reuters", "https://reuters.com", "UK"},
+		{"AP News", "https://apnews.com", "US"},
+		{"Protocol", "https://protocol.com", "US"},
+		{"Axios", "https://axios.com", "US"},
+		{"The Economist", "https://economist.com", "UK"},
+		{"Business Insider", "https://businessinsider.com", "US"},
 	}
-	for i := range clients {
-		if err := db.Where("user_id = ? AND name = ?", user.ID, clients[i].Name).
+	outlets := make([]models.Outlet, len(outletDefs))
+	for i, o := range outletDefs {
+		addedBy := &users[i%len(users)].ID
+		outlets[i] = models.Outlet{
+			AddedBy: addedBy,
+			Name:    o.name,
+			Website: o.website,
+			Country: o.country,
+		}
+		if err := db.Where("name = ?", o.name).FirstOrCreate(&outlets[i]).Error; err != nil {
+			log.Fatalf("create outlet %s: %v", o.name, err)
+		}
+	}
+	log.Printf("  outlets: %d created/found", len(outlets))
+
+	// ── Journalists (200 agency-wide) ─────────────────────────────────────────
+	niches := []string{
+		"Enterprise SaaS", "AI / Machine Learning", "Cybersecurity", "FinTech",
+		"Consumer Technology", "Climate Tech", "Business Technology", "Startup / VC",
+		"Health Tech", "E-commerce", "Future of Work", "Sustainability",
+		"Data & Analytics", "Developer Tools", "Cloud Infrastructure", "Mobility Tech",
+	}
+	firstNames := []string{
+		"Sarah", "Marcus", "Irina", "James", "Emily", "Luca", "Priya", "Tomás",
+		"Nadia", "Kevin", "Amelia", "Ravi", "Sophie", "Omar", "Lin", "David",
+		"Elena", "Patrick", "Mei", "Carlos", "Zara", "Finn", "Aisha", "Hugo",
+		"Rosa", "Sam", "Valentina", "Chris", "Fatima", "Ethan",
+	}
+	lastNames := []string{
+		"Chen", "Webb", "Popescu", "Park", "Thornton", "Ferrari", "Sharma", "Reyes",
+		"Koval", "Obi", "Walsh", "Kapoor", "Laurent", "Hassan", "Zhang", "Brooks",
+		"Novak", "O'Brien", "Huang", "Vargas", "Khan", "Andersen", "Diallo", "Müller",
+		"García", "Taylor", "Rossi", "Kim", "Ibrahim", "Jensen",
+	}
+
+	journalists := make([]models.Journalist, 0, 200)
+	emailSet := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		outlet := outlets[i%len(outlets)]
+		first := firstNames[i%len(firstNames)]
+		last := lastNames[(i*7+3)%len(lastNames)]
+		niche := niches[i%len(niches)]
+		addedBy := &users[i%len(users)].ID
+
+		// Build unique email
+		base := fmt.Sprintf("%s.%s@%d.rivalpr-seed.io",
+			slugify(first), slugify(last), i)
+		for emailSet[base] {
+			base = fmt.Sprintf("%s.%s%d@%d.rivalpr-seed.io",
+				slugify(first), slugify(last), rng.Intn(99), i)
+		}
+		emailSet[base] = true
+
+		j := models.Journalist{
+			AddedBy:  addedBy,
+			OutletID: outlet.ID,
+			Name:     fmt.Sprintf("%s %s", first, last),
+			Email:    base,
+			Niche:    niche,
+		}
+		if err := db.Where("email = ?", base).FirstOrCreate(&j).Error; err != nil {
+			log.Fatalf("create journalist %d: %v", i, err)
+		}
+		journalists = append(journalists, j)
+	}
+	log.Printf("  journalists: %d created/found", len(journalists))
+
+	// ── Clients (20 user-scoped) ──────────────────────────────────────────────
+	clientDefs := []struct{ name, industry string }{
+		{"NovaSpark AI", "Artificial Intelligence / SaaS"},
+		{"GreenRoute Logistics", "Sustainability / Logistics"},
+		{"QuantumPay", "FinTech / Payments"},
+		{"DataMesh Labs", "Data Infrastructure"},
+		{"Skyborne Mobility", "Urban Air Mobility"},
+		{"CarbonTrace", "Climate Tech"},
+		{"MedVault", "Health Tech / Security"},
+		{"RetailOS", "E-commerce / Retail Tech"},
+		{"ClearSignal Security", "Cybersecurity"},
+		{"FlowOps", "Future of Work / SaaS"},
+		{"NexusChain", "Supply Chain Tech"},
+		{"BrightClass", "EdTech"},
+		{"SolarGrid Analytics", "Energy Tech"},
+		{"RoboFarm", "AgriTech"},
+		{"CloudNest", "Cloud Infrastructure"},
+		{"PulseCare", "Digital Health"},
+		{"TradeFlow", "FinTech / Trade Finance"},
+		{"UrbanSense", "Smart Cities / IoT"},
+		{"DevLens", "Developer Tools"},
+		{"IntelliFleet", "Mobility / Fleet Tech"},
+	}
+	clients := make([]models.Client, len(clientDefs))
+	for i, c := range clientDefs {
+		owner := users[i%len(users)]
+		clients[i] = models.Client{
+			UserID:   owner.ID,
+			Name:     c.name,
+			Industry: c.industry,
+		}
+		if err := db.Where("user_id = ? AND name = ?", owner.ID, c.name).
 			FirstOrCreate(&clients[i]).Error; err != nil {
-			log.Fatalf("create client %s: %v", clients[i].Name, err)
+			log.Fatalf("create client %s: %v", c.name, err)
 		}
-		log.Printf("  client:  %s", clients[i].Name)
 	}
+	log.Printf("  clients: %d created/found", len(clients))
 
-	// ── Journalists ───────────────────────────────────────────────────────────
-	journalists := []models.Journalist{
-		{
-			UserID: user.ID, OutletID: outlets[0].ID,
-			Name: "Sarah Chen", Email: "sarah.chen@techcrunch.com",
-			Niche: "Enterprise SaaS",
-		},
-		{
-			UserID: user.ID, OutletID: outlets[0].ID,
-			Name: "Marcus Webb", Email: "marcus.webb@techcrunch.com",
-			Niche: "AI / Machine Learning",
-		},
-		{
-			UserID: user.ID, OutletID: outlets[1].ID,
-			Name: "Irina Popescu", Email: "irina.popescu@forbes.ro",
-			Niche: "Business Technology",
-		},
-		{
-			UserID: user.ID, OutletID: outlets[2].ID,
-			Name: "James Park", Email: "james.park@theverge.com",
-			Niche: "Consumer Technology",
-		},
-	}
-	for i := range journalists {
-		if err := db.Where("user_id = ? AND email = ?", user.ID, journalists[i].Email).
-			FirstOrCreate(&journalists[i]).Error; err != nil {
-			log.Fatalf("create journalist %s: %v", journalists[i].Name, err)
+	// ── CRM Relationships (~200, one per user/journalist pair) ────────────────
+	crmCount := 0
+	for ui, u := range users {
+		// Each user gets ~40 journalists rated
+		start := ui * 40
+		for ji := start; ji < start+40 && ji < len(journalists); ji++ {
+			score := rng.Intn(10) + 1
+			notes := fmt.Sprintf("Auto-seeded note for %s. Score: %d/10.",
+				journalists[ji].Name, score)
+			rel := models.CrmRelationship{
+				UserID:            u.ID,
+				JournalistID:      journalists[ji].ID,
+				RelationshipScore: score,
+				PrivateNotes:      notes,
+			}
+			if err := db.Where("user_id = ? AND journalist_id = ?", u.ID, journalists[ji].ID).
+				FirstOrCreate(&rel).Error; err != nil {
+				log.Fatalf("crm: %v", err)
+			}
+			crmCount++
 		}
-		log.Printf("  journalist: %s (%s)", journalists[i].Name, journalists[i].Niche)
 	}
+	log.Printf("  crm relationships: %d created/found", crmCount)
 
-	// ── CRM Relationships ─────────────────────────────────────────────────────
-	relationships := []models.CrmRelationship{
-		{
-			UserID: user.ID, JournalistID: journalists[0].ID,
-			RelationshipScore: 8,
-			PrivateNotes:      "Warm contact. Met at TechCrunch Disrupt 2025. Responds quickly. Prefers enterprise data angles and exclusive first asks.",
-		},
-		{
-			UserID: user.ID, JournalistID: journalists[1].ID,
-			RelationshipScore: 5,
-			PrivateNotes:      "Cold-ish. One email exchange in 2024. Strong AI beat — worth re-engaging with a solid demo or benchmark data.",
-		},
-		{
-			UserID: user.ID, JournalistID: journalists[2].ID,
-			RelationshipScore: 9,
-			PrivateNotes:      "Best contact in the book. Covered our last 3 client launches. Always give her the exclusive.",
-		},
-	}
-	for i := range relationships {
-		if err := db.Where("user_id = ? AND journalist_id = ?", user.ID, relationships[i].JournalistID).
-			FirstOrCreate(&relationships[i]).Error; err != nil {
-			log.Fatalf("create crm relationship: %v", err)
+	// ── Campaigns (20) ────────────────────────────────────────────────────────
+	campaigns := make([]models.Campaign, len(clients))
+	for i, client := range clients {
+		title := fmt.Sprintf("%s — Q%d %d Launch", client.Name, (i%4)+1, 2026)
+		pressRelease := fmt.Sprintf(
+			"FOR IMMEDIATE RELEASE\n\n%s today announced a major product milestone "+
+				"that significantly advances the %s sector. This development is expected "+
+				"to impact thousands of customers globally.\n\nThe company has seen "+
+				"consistent 40%% year-over-year growth and is backed by leading investors.",
+			client.Name, client.Industry,
+		)
+		campaigns[i] = models.Campaign{
+			UserID:           client.UserID,
+			ClientID:         client.ID,
+			Title:            title,
+			PressReleaseText: pressRelease,
 		}
-		log.Printf("  crm: %s → score %d", journalists[i].Name, relationships[i].RelationshipScore)
-	}
-
-	// ── Campaigns ─────────────────────────────────────────────────────────────
-	campaigns := []models.Campaign{
-		{
-			UserID:   user.ID,
-			ClientID: clients[0].ID,
-			Title:    "NovaSpark AI Platform — Q2 2026 Launch",
-			PressReleaseText: `FOR IMMEDIATE RELEASE
-
-NovaSpark AI today announced the general availability of its enterprise AI platform, NovaSpark Core v3.0 — enabling mid-market companies to deploy production-grade AI workflows in under 48 hours without specialised ML expertise.
-
-KEY FACTS
-• Reduces operational costs by an average of 40% within 90 days (based on 50-company beta cohort)
-• Native integrations with Salesforce, SAP, and Microsoft 365
-• Priced at $2,500/month for up to 500 employees; enterprise pricing available
-• SOC 2 Type II certified; GDPR compliant
-
-QUOTES
-"We built NovaSpark Core for operations teams that can't afford a 6-month AI implementation cycle," said Elena Novak, CEO. "Our beta customers are seeing 3x ROI in the first quarter."
-
-Early customers include RetailCo (500-person UK retailer, 38% logistics cost reduction) and ManuTech GmbH (German manufacturer, 52% reduction in defect-detection time).
-
-NovaSpark AI was founded in 2022 and is backed by $18M in Series A funding. The platform is available immediately at novaspark.ai.`,
-		},
-		{
-			UserID:   user.ID,
-			ClientID: clients[1].ID,
-			Title:    "GreenRoute Carbon Offset Partnership",
-			PressReleaseText: `FOR IMMEDIATE RELEASE
-
-GreenRoute Logistics and CarbonBridge today announced a strategic partnership to offer verified carbon-neutral last-mile delivery across 12 European markets.
-
-KEY FACTS
-• 100% carbon-neutral delivery for e-commerce orders under 5kg
-• Verified offsets via Gold Standard-certified reforestation projects in Romania and Portugal
-• No price premium for end consumers — GreenRoute absorbs offset costs as part of its ESG commitment
-• Available: Q3 2026; initial rollout in Romania, Germany, and the Netherlands
-
-This partnership positions GreenRoute as the first logistics provider in CEE to offer certified carbon-neutral delivery at scale.`,
-		},
-	}
-	for i := range campaigns {
-		if err := db.Where("user_id = ? AND title = ?", user.ID, campaigns[i].Title).
+		if err := db.Where("user_id = ? AND title = ?", client.UserID, title).
 			FirstOrCreate(&campaigns[i]).Error; err != nil {
-			log.Fatalf("create campaign %s: %v", campaigns[i].Title, err)
+			log.Fatalf("create campaign %s: %v", title, err)
 		}
-		log.Printf("  campaign: %s", campaigns[i].Title)
 	}
+	log.Printf("  campaigns: %d created/found", len(campaigns))
 
-	// ── Pitches ───────────────────────────────────────────────────────────────
-	type pitchSeed struct {
-		model    models.Pitch
-		versions []string // one string per version body to create
+	// ── Pitches (1000+) and Pitch Versions (~1500) ────────────────────────────
+	statuses := []string{"draft", "sent", "opened", "replied"}
+	pitchCount := 0
+	versionCount := 0
+
+	type pitchKey struct {
+		userID       uuid.UUID
+		journalistID uuid.UUID
+		campaignID   uuid.UUID
 	}
+	pitchSeen := map[pitchKey]bool{}
 
-	pitches := []pitchSeed{
-		{
-			model: models.Pitch{
-				UserID:       user.ID,
-				ClientID:     clients[0].ID,
-				CampaignID:   &campaigns[0].ID,
-				JournalistID: journalists[0].ID,
-				ContextBrief: "Sarah covers enterprise SaaS extensively. Lead with the 48-hour deployment angle and the ROI data. She prefers exclusive access — offer her the embargo.",
-				Status:       "replied",
-			},
-			versions: []string{
-				`Subject: Exclusive: NovaSpark AI cuts enterprise deployment from months to 48 hours
-
-Dear Sarah,
-
-I hope this finds you well. I'm reaching out with an exclusive on a story I think your TechCrunch Enterprise SaaS readers will find highly relevant.
-
-NovaSpark AI is launching NovaSpark Core v3.0 today — the first enterprise AI platform that gets mid-market companies to production in under 48 hours, with no ML expertise required.
-
-The headline number: beta customers are averaging 40% operational cost reduction within 90 days. RetailCo (UK, 500 employees) cut logistics costs by 38%; ManuTech GmbH reduced defect-detection time by 52%.
-
-I'd love to offer you an embargo briefing with CEO Elena Novak before the public announcement goes out. She's available Thursday or Friday this week.
-
-Would that work for you?
-
-Best,
-Alice
-RivalPR Intel`,
-				`Subject: Exclusive briefing: How NovaSpark AI gets enterprises to production AI in 48 hours
-
-Dear Sarah,
-
-Quick follow-up on NovaSpark AI's Q2 launch — I wanted to lead with the customer data this time, since I know you appreciate concrete numbers over vendor claims.
-
-50-company beta cohort results:
-• Average time-to-production: 47 hours (industry average: 4–6 months)
-• 90-day ROI: 3.2x average
-• Cost reduction: 40% operational costs within first quarter
-
-The platform integrates natively with Salesforce, SAP, and Microsoft 365 — no API work required. SOC 2 Type II certified.
-
-CEO Elena Novak is available for an exclusive 30-minute briefing this week. Embargo available until 9am ET Tuesday.
-
-Let me know if you'd like the full data pack.
-
-Alice`,
-			},
-		},
-		{
-			model: models.Pitch{
-				UserID:       user.ID,
-				ClientID:     clients[0].ID,
-				CampaignID:   &campaigns[0].ID,
-				JournalistID: journalists[1].ID,
-				ContextBrief: "Marcus focuses on AI research and benchmarks. Lead with the technical architecture — specifically how NovaSpark handles model fine-tuning without requiring MLOps teams.",
-				Status:       "sent",
-			},
-			versions: []string{
-				`Subject: NovaSpark AI: production ML without MLOps — benchmark data inside
-
-Hi Marcus,
-
-I'm reaching out about NovaSpark AI's v3.0 launch — specifically because of your recent coverage of enterprise ML deployment friction.
-
-The core technical claim: NovaSpark Core abstracts the entire MLOps stack so domain experts (not data scientists) can deploy fine-tuned models directly from business data. No Python, no infrastructure, no model serving layer to manage.
-
-Under the hood: proprietary AutoFinetune pipeline built on top of open-weight models, with a workflow DSL that non-technical users can configure via UI.
-
-Happy to arrange a technical deep-dive with their ML team if you'd like to stress-test the claims.
-
-Alice`,
-			},
-		},
-		{
-			model: models.Pitch{
-				UserID:       user.ID,
-				ClientID:     clients[0].ID,
-				CampaignID:   &campaigns[0].ID,
-				JournalistID: journalists[2].ID,
-				ContextBrief: "Irina covers business technology for a Romanian audience. Angle: NovaSpark has Romanian customers and is expanding into CEE. Local story with global context.",
-				Status:       "draft",
-			},
-			versions: []string{},
-		},
-		{
-			model: models.Pitch{
-				UserID:       user.ID,
-				ClientID:     clients[1].ID,
-				CampaignID:   &campaigns[1].ID,
-				JournalistID: journalists[3].ID,
-				ContextBrief: "James covers consumer tech and sustainability at The Verge. Angle: carbon-neutral delivery as a consumer expectation, not a premium feature.",
-				Status:       "draft",
-			},
-			versions: []string{},
-		},
-	}
-
-	for i := range pitches {
-		p := &pitches[i].model
-		// Use a unique check: user + journalist + campaign
-		query := db.Where("user_id = ? AND journalist_id = ?", p.UserID, p.JournalistID)
-		if p.CampaignID != nil {
-			query = query.Where("campaign_id = ?", *p.CampaignID)
-		}
-		if err := query.FirstOrCreate(p).Error; err != nil {
-			log.Fatalf("create pitch: %v", err)
-		}
-		log.Printf("  pitch:  journalist=%s status=%s", journalists[i].Name, p.Status)
-
-		// Create pitch versions
-		for vNum, body := range pitches[i].versions {
-			ver := models.PitchVersion{
-				PitchID:         p.ID,
-				VersionNumber:   vNum + 1,
-				AIGeneratedBody: body,
-				PromptSnapshot: generatePromptSnapshot(
-					journalists[i].Name,
-					journalists[i].Outlet.Name,
-					journalists[i].Niche,
-					clients[i%len(clients)].Name,
-					campaigns[i%len(campaigns)].Title,
-				),
+	// ~1040 pitches: each user pitches ~208 times across their journalists/campaigns
+	for ui, u := range users {
+		userClients := make([]models.Client, 0)
+		userCampaigns := make([]models.Campaign, 0)
+		for _, c := range clients {
+			if c.UserID == u.ID {
+				userClients = append(userClients, c)
 			}
-			// Pre-populate outlet name for snapshot (not preloaded)
-			var outlet models.Outlet
-			db.First(&outlet, journalists[i].OutletID)
-			ver.PromptSnapshot = generatePromptSnapshot(
-				journalists[i].Name, outlet.Name, journalists[i].Niche,
-				clients[i%len(clients)].Name, campaigns[i%len(campaigns)].Title,
-			)
-
-			existing := models.PitchVersion{}
-			if err := db.Where("pitch_id = ? AND version_number = ?", p.ID, ver.VersionNumber).
-				FirstOrCreate(&existing, ver).Error; err != nil {
-				log.Fatalf("create pitch version: %v", err)
+		}
+		for _, cam := range campaigns {
+			if cam.UserID == u.ID {
+				userCampaigns = append(userCampaigns, cam)
 			}
-			log.Printf("    version v%d created", ver.VersionNumber)
+		}
+
+		// Each user gets ~40 tracked journalists
+		trackedStart := ui * 40
+		for ji := trackedStart; ji < trackedStart+40 && ji < len(journalists); ji++ {
+			j := journalists[ji]
+			// Each journalist gets ~5 pitches from different campaigns
+			numPitches := 3 + rng.Intn(4) // 3–6
+			for pi := 0; pi < numPitches && pi < len(userCampaigns); pi++ {
+				cam := userCampaigns[pi%len(userCampaigns)]
+				key := pitchKey{u.ID, j.ID, cam.ID}
+				if pitchSeen[key] {
+					continue
+				}
+				pitchSeen[key] = true
+
+				status := statuses[rng.Intn(len(statuses))]
+				context := fmt.Sprintf(
+					"%s covers %s. Angle: tie %s's announcement to their recent coverage. "+
+						"Offer exclusive data.",
+					j.Name, j.Niche, cam.Title,
+				)
+
+				pitch := models.Pitch{
+					UserID:       u.ID,
+					ClientID:     cam.ClientID,
+					CampaignID:   &cam.ID,
+					JournalistID: j.ID,
+					ContextBrief: context,
+					Status:       status,
+				}
+				if err := db.Where("user_id = ? AND journalist_id = ? AND campaign_id = ?",
+					u.ID, j.ID, cam.ID).FirstOrCreate(&pitch).Error; err != nil {
+					log.Fatalf("create pitch: %v", err)
+				}
+				pitchCount++
+
+				// 0–2 versions per pitch
+				numVersions := rng.Intn(3)
+				for v := 1; v <= numVersions; v++ {
+					body := fmt.Sprintf(
+						"Subject: Exclusive: %s reaches key milestone\n\nDear %s,\n\n"+
+							"I'm reaching out about %s, which I believe aligns with your "+
+							"coverage of %s at %s.\n\n"+
+							"Key metrics: 40%% efficiency gains, 3x ROI within 90 days.\n\n"+
+							"Would you be open to a 20-minute briefing this week?\n\nBest,\n%s",
+						cam.Title, j.Name, cam.Title, j.Niche,
+						j.Outlet.Name, u.Email,
+					)
+					ver := models.PitchVersion{
+						PitchID:         pitch.ID,
+						VersionNumber:   v,
+						AIGeneratedBody: body,
+						PromptSnapshot:  generatePromptSnapshot(j.Name, j.Outlet.Name, j.Niche, cam.ClientID.String(), cam.Title),
+					}
+					// Load outlet name if not preloaded
+					if j.Outlet.Name == "" {
+						var outlet models.Outlet
+						db.First(&outlet, "id = ?", j.OutletID)
+						ver.PromptSnapshot = generatePromptSnapshot(j.Name, outlet.Name, j.Niche, cam.ClientID.String(), cam.Title)
+						ver.AIGeneratedBody = fmt.Sprintf(
+							"Subject: Exclusive: %s reaches key milestone\n\nDear %s,\n\n"+
+								"I'm reaching out about %s, which I believe aligns with your "+
+								"coverage of %s at %s.\n\n"+
+								"Key metrics: 40%% efficiency gains, 3x ROI within 90 days.\n\n"+
+								"Would you be open to a 20-minute briefing this week?\n\nBest,\n%s",
+							cam.Title, j.Name, cam.Title, j.Niche,
+							outlet.Name, u.Email,
+						)
+					}
+					existing := models.PitchVersion{}
+					if err := db.Where("pitch_id = ? AND version_number = ?",
+						pitch.ID, v).FirstOrCreate(&existing, ver).Error; err != nil {
+						log.Fatalf("create version: %v", err)
+					}
+					versionCount++
+				}
+			}
 		}
 	}
+	log.Printf("  pitches: %d created/found", pitchCount)
+	log.Printf("  pitch versions: %d created/found", versionCount)
 
 	log.Println("")
-	log.Println("Seed complete. Demo credentials:")
-	log.Println("  Email:    alice@rivalpr.com")
-	log.Println("  Password: Demo1234!")
+	log.Println("Seed complete. Demo credentials (password: Demo1234!):")
+	for _, u := range userDefs {
+		log.Printf("  %s  (%s)", u.email, u.name)
+	}
 }
 
 func generatePromptSnapshot(journalistName, outletName, niche, clientName, campaignTitle string) string {
@@ -351,12 +378,26 @@ func generatePromptSnapshot(journalistName, outletName, niche, clientName, campa
 		". Campaign context: " + campaignTitle + "."
 }
 
+func slugify(s string) string {
+	result := make([]byte, 0, len(s))
+	for _, c := range []byte(s) {
+		if c >= 'A' && c <= 'Z' {
+			result = append(result, c+32)
+		} else if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			result = append(result, c)
+		}
+	}
+	if len(result) == 0 {
+		return "x"
+	}
+	return string(result)
+}
+
 // ── Clear ─────────────────────────────────────────────────────────────────────
 
 func runClear(db *gorm.DB) {
 	log.Println("Clearing all data from the database...")
 
-	// Truncate in FK-safe order using CASCADE.
 	sql := `TRUNCATE TABLE pitch_versions, pitches, crm_relationships, campaigns, journalists, outlets, clients, users RESTART IDENTITY CASCADE`
 	if err := db.Exec(sql).Error; err != nil {
 		log.Fatalf("truncate failed: %v", err)
@@ -365,6 +406,3 @@ func runClear(db *gorm.DB) {
 	log.Println("All tables cleared. Schema preserved.")
 	log.Println("Run with --action=seed to repopulate.")
 }
-
-// ptr is a convenience helper for getting a pointer to a uuid.UUID value.
-func ptr(id uuid.UUID) *uuid.UUID { return &id }
