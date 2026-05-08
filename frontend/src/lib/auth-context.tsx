@@ -26,10 +26,13 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function parseJwtPayload(token: string): { sub: string; email: string; exp: number } | null {
+function parseJwtPayload(token: string): { user_id: string; email: string; exp: number } | null {
   try {
-    const base64 = token.split(".")[1];
-    const json = atob(base64);
+    const base64Url = token.split(".")[1];
+    // JWT uses base64url (RFC 4648 §5): replace URL-safe chars and add padding
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const json = atob(padded);
     return JSON.parse(json);
   } catch {
     return null;
@@ -47,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const payload = parseJwtPayload(stored);
       if (payload && payload.exp * 1000 > Date.now()) {
         setToken(stored);
-        setUser({ id: payload.sub, email: payload.email, created_at: "" });
+        setUser({ id: payload.user_id, email: payload.email, created_at: "" });
       } else {
         localStorage.removeItem(TOKEN_KEY);
       }

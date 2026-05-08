@@ -124,7 +124,7 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Campaigns</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -151,7 +151,13 @@ export default function CampaignsPage() {
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select client" />
+                      <span className="flex flex-1 text-left text-sm truncate" data-slot="select-value">
+                        {form.client_id ? (
+                          clients.find((c) => c.id === form.client_id)?.name ?? "Select client"
+                        ) : (
+                          <span className="text-muted-foreground">Select client</span>
+                        )}
+                      </span>
                     </SelectTrigger>
                     <SelectContent>
                       {clients.map((c) => (
@@ -195,11 +201,11 @@ export default function CampaignsPage() {
         </Dialog>
       </div>
 
-      <Card>
+      <Card className="flex-1 min-h-0">
         <CardHeader>
           <CardTitle>All Campaigns</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 min-h-0 overflow-y-auto">
           {loading ? (
             <p className="text-muted-foreground">Loading...</p>
           ) : campaigns.length === 0 ? (

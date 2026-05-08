@@ -82,18 +82,22 @@ The collection auto-saves the JWT token and all resource IDs — run requests to
 
 ### Endpoints
 
-| Method                | Path                        | Description                        |
-| --------------------- | --------------------------- | ---------------------------------- |
-| `POST`                | `/auth/register`            | Create account                     |
-| `POST`                | `/auth/login`               | Get JWT token                      |
-| `GET/POST/PUT/DELETE` | `/api/clients`              | Client management                  |
-| `GET/POST/PUT/DELETE` | `/api/outlets`              | Media outlet management            |
-| `GET/POST/PUT/DELETE` | `/api/journalists`          | Journalist database (paginated)    |
-| `GET/POST/PUT/DELETE` | `/api/crm/relationships`    | Per-journalist relationship scores |
-| `GET/POST/PUT/DELETE` | `/api/campaigns`            | Campaign management                |
-| `GET/POST/PUT/DELETE` | `/api/pitches`              | Pitch management                   |
-| `GET`                 | `/api/pitches/:id/versions` | List AI-generated versions         |
-| `POST`                | `/api/pitches/:id/generate` | Generate a new pitch version       |
+| Method                | Path                               | Description                          |
+| --------------------- | ---------------------------------- | ------------------------------------ |
+| `POST`                | `/auth/register`                   | Create account                       |
+| `POST`                | `/auth/login`                      | Get JWT token                        |
+| `GET/POST/PUT/DELETE` | `/api/clients`                     | Client management                    |
+| `GET/POST/PUT/DELETE` | `/api/outlets`                     | Media outlet management              |
+| `GET/POST/PUT/DELETE` | `/api/journalists`                 | Journalist database (paginated)      |
+| `GET`                 | `/api/journalists/agency`          | Shared agency journalist pool        |
+| `GET/POST/PUT/DELETE` | `/api/crm/relationships`           | Per-journalist relationship scores   |
+| `GET/POST/PUT/DELETE` | `/api/campaigns`                   | Campaign management                  |
+| `GET/POST/PUT/DELETE` | `/api/prompt-templates`            | Reusable AI generation presets       |
+| `GET/POST/PUT/DELETE` | `/api/pitches`                     | Pitch management                     |
+| `GET`                 | `/api/pitches/:id/versions`        | List AI-generated versions           |
+| `GET`                 | `/api/pitches/:id/versions/:verId` | Get specific version                 |
+| `POST`                | `/api/pitches/:id/generate`        | Generate a new pitch version (async) |
+| `GET`                 | `/health`                          | Health check                         |
 
 All `/api/*` routes require `Authorization: Bearer <token>`.
 
@@ -138,18 +142,32 @@ Create Outlet (TechCrunch)
 
 ### Epic 4 — AI-Powered Pitch Generation
 
-The user selects a campaign and a journalist, then hits **Generate**. The system uses the campaign's press release, the journalist's niche and outlet name, and their CRM score as context — calls the AI, and stores the result as a new `pitch_version`. Each regeneration increments the version number.
+The user selects a campaign and a journalist, then hits **Generate**. The system uses the campaign's press release, the journalist's niche and outlet name, and their CRM score as context — calls the AI asynchronously, and stores the result as a new `pitch_version`. Each regeneration increments the version number.
 
-> _"Generate a pitch for Sarah at TechCrunch for the Acme AI launch, then tweak the tone and save as v2."_
+**Generation parameters:**
+
+| Parameter           | Options                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| Tone                | `formal` · `conversational` · `urgent` · `enthusiastic`                  |
+| Length              | `concise` · `standard` · `detailed`                                      |
+| Angle               | `news_hook` · `exclusive` · `follow_up` · `thought_leadership` · `event` |
+| Custom Instructions | Free-text (e.g. "mention their recent AI article")                       |
+
+These parameters can be saved as **Prompt Templates** for reuse across pitches.
+
+> _"Generate a pitch for Sarah at TechCrunch for the Acme AI launch with a conversational tone and exclusive angle, then refine as v2."_
 
 ```
 Create Pitch (client: Acme, journalist: Sarah Chen, campaign: Q2 Launch)
-  └── POST /pitches/:id/generate  →  pitch_version v1 (AI-generated body + prompt snapshot)
-  └── POST /pitches/:id/generate  →  pitch_version v2
-  └── GET  /pitches/:id/versions  →  compare v1 and v2, pick the best
+  └── POST /pitches/:id/generate  →  202 Accepted (async worker)
+  └── GET  /pitches/:id/versions  →  poll until v1 appears
+  └── POST /pitches/:id/generate  →  refine with different params → v2
+  └── GET  /pitches/:id/versions  →  compare v1 and v2 side-by-side
 ```
 
-> **Note:** AI generation currently returns a mock template response when no key is configured. Real Gemini integration requires `GEMINI_API_KEY` (free tier available at [aistudio.google.com](https://aistudio.google.com)).
+The frontend polls `GET /pitches/:id/versions` for up to 60 seconds after generation is requested. A side-by-side comparison view helps users pick the best version.
+
+> **Note:** AI generation returns a mock template response when no key is configured. Real Gemini integration requires `GEMINI_API_KEY` (free tier available at [aistudio.google.com](https://aistudio.google.com)).
 
 ---
 
@@ -165,9 +183,44 @@ GET /api/pitches?campaign_id=<id>     ← all pitches for a specific campaign
 
 ---
 
-### Epic 6 — Outreach Dashboard _(Phase 2 — Frontend)_
+### Epic 6 — Outreach Dashboard
 
-A top-level view showing campaign health: how many pitches were sent vs replied, which journalists are warm (high CRM score) vs cold, and recent activity. Powered by the existing API queries above, rendered in the Next.js frontend.
+The Next.js frontend provides a full-featured dashboard and management UI:
+
+- **Dashboard Home** — Summary cards (total Clients, Campaigns, Pitches) with pitch status breakdown (draft / sent / opened / replied) and quick-action links.
+- **Clients** — Table view with CRUD; create/edit via modal dialogs.
+- **Campaigns** — Campaign list tied to clients with press release preview; full CRUD.
+- **Journalists** — Tabbed interface:
+  - _Journalists tab:_ paginated list, import from shared agency pool, CRM relationship scoring (1–10), private notes.
+  - _Outlets tab:_ CRUD for media publications.
+- **Pitches** — Filter by status/campaign, create pitches, trigger AI generation with configurable parameters, view version history, compare versions side-by-side, update status.
+- **Prompt Templates** — Save/load generation parameter presets for reuse.
+
+---
+
+## Seed Data
+
+Populate the database with realistic demo data for development and testing:
+
+```bash
+# Seed (5 users, 30 outlets, 200 journalists, 20 clients, 20 campaigns, 1000+ pitches)
+docker compose exec backend go run ./cmd/seed --action=seed
+
+# Clear all data (preserves schema)
+docker compose exec backend go run ./cmd/seed --action=clear
+```
+
+**Demo credentials** (password for all: `Demo1234!`):
+
+| Email             | Name          |
+| ----------------- | ------------- |
+| alice@rivalpr.com | Alice Morgan  |
+| bob@rivalpr.com   | Bob Singh     |
+| carol@rivalpr.com | Carol Tanaka  |
+| dave@rivalpr.com  | Dave Okoye    |
+| eve@rivalpr.com   | Eve Lindström |
+
+The seed is deterministic (fixed random seed) — running it multiple times is safe (uses `FirstOrCreate`).
 
 ---
 
@@ -176,16 +229,27 @@ A top-level view showing campaign health: how many pitches were sent vs replied,
 ```
 .
 ├── backend/
-│   ├── cmd/server/main.go          # entrypoint: DB, router, middleware, routes
+│   ├── cmd/
+│   │   ├── server/main.go          # entrypoint: DB, router, middleware, routes
+│   │   └── seed/main.go            # database seeder & clearer
 │   ├── internal/
 │   │   ├── config/config.go        # env var loader
-│   │   ├── models/                 # 8 GORM models
+│   │   ├── models/                 # 9 GORM models
 │   │   ├── handlers/               # HTTP handlers — one file per resource
 │   │   ├── middleware/             # JWT auth, CORS, rate limiting
-│   │   └── services/auth.go        # register, login, JWT generation
+│   │   ├── services/               # auth (register/login/JWT), gemini (AI client)
+│   │   └── worker/worker.go        # async AI generation goroutine pool
 │   ├── Dockerfile
 │   └── .air.toml                   # hot-reload config
-├── frontend/                       # Next.js App Router (Phase 2)
+├── frontend/
+│   ├── src/
+│   │   ├── app/                    # Next.js App Router pages
+│   │   │   ├── (dashboard)/        # Protected: home, clients, campaigns, journalists, pitches
+│   │   │   ├── login/              # Public: login page
+│   │   │   └── register/           # Public: registration page
+│   │   ├── components/             # Sidebar, shadcn/ui primitives
+│   │   └── lib/                    # API client, auth context, types, utils
+│   └── Dockerfile
 ├── api-collection/                 # Postman collection + environment
 ├── docker-compose.yml
 ├── .env.example
@@ -313,11 +377,12 @@ For a solo developer, this combination maximises frontend iteration speed — fr
 
 ### Entity Overview
 
-| Category     | Tables                                       | Purpose                                 |
-| ------------ | -------------------------------------------- | --------------------------------------- |
-| **Core**     | `users`, `clients`, `journalists`, `outlets` | Foundation — agency-wide shared data    |
-| **Workflow** | `campaigns`, `crm_relationships`             | Press releases & personalised scoring   |
-| **Action**   | `pitches`, `pitch_versions`                  | AI-generated outreach + version history |
+| Category          | Tables                                       | Purpose                                 |
+| ----------------- | -------------------------------------------- | --------------------------------------- |
+| **Core**          | `users`, `clients`, `journalists`, `outlets` | Foundation — agency-wide shared data    |
+| **Workflow**      | `campaigns`, `crm_relationships`             | Press releases & personalised scoring   |
+| **Action**        | `pitches`, `pitch_versions`                  | AI-generated outreach + version history |
+| **Configuration** | `prompt_templates`                           | Reusable AI generation presets          |
 
 ### Improvements applied to v2.0
 
@@ -345,30 +410,37 @@ Table users {
 }
 
 Table outlets {
-  id         uuid    [primary key]
-  name       varchar [unique, not null]  // e.g. TechCrunch, Forbes Romania
+  id         uuid      [primary key]
+  added_by   uuid      [null, note: 'user who created this record']
+  name       varchar   [unique, not null]
   website    varchar
   country    varchar
   created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
   deleted_at timestamp [null, note: 'soft delete']
   Note: 'Publications / media outlets — referenced by journalists'
 }
 
 Table clients {
   id         uuid      [primary key]
+  user_id    uuid      [not null, note: 'owner of this client record']
   name       varchar   [not null]
-  industry   varchar   // e.g. Tech, Auto, FMCG
+  industry   varchar
   created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
   deleted_at timestamp [null, note: 'soft delete']
-  Note: 'Brands represented by the agency'
+  Note: 'Brands represented by the agency — user-scoped'
 }
 
 Table journalists {
-  id         uuid    [primary key]
-  outlet_id  uuid    [not null, note: 'REQUIRED: which publication?']
-  name       varchar [not null]
-  email      varchar [unique, not null]
-  niche      varchar // e.g. Software, Lifestyle
+  id         uuid      [primary key]
+  added_by   uuid      [null, note: 'user who created this record']
+  outlet_id  uuid      [not null, note: 'REQUIRED: which publication?']
+  name       varchar   [not null]
+  email      varchar   [unique, not null]
+  niche      varchar
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
   deleted_at timestamp [null, note: 'soft delete']
   Note: 'Shared agency media contact database'
 }
@@ -381,10 +453,10 @@ Table crm_relationships {
   id                 uuid      [primary key]
   user_id            uuid      [not null]
   journalist_id      uuid      [not null]
-  relationship_score int       [not null, note: 'Score 1-10']
+  relationship_score int       [not null, default: 0, note: 'CHECK: 0-10']
   private_notes      text
   created_at         timestamp [default: `now()`]
-  updated_at         timestamp [default: `now()`, note: 'updated on every score change']
+  updated_at         timestamp [default: `now()`]
   Note: 'Personalised contact book per PR rep'
 
   indexes {
@@ -399,6 +471,7 @@ Table campaigns {
   title              varchar   [not null]
   press_release_text text
   created_at         timestamp [default: `now()`]
+  updated_at         timestamp [default: `now()`]
   deleted_at         timestamp [null, note: 'soft delete']
   Note: 'Major press launches'
 }
@@ -408,26 +481,28 @@ Table campaigns {
 // ==========================================
 
 Table pitches {
-  id            uuid    [primary key]
-  user_id       uuid    [not null]
-  client_id     uuid    [not null,  note: 'REQUIRED: which client?']
-  campaign_id   uuid    [null,      note: 'OPTIONAL: part of a campaign?']
-  journalist_id uuid    [not null,  note: 'REQUIRED: target journalist']
-  context_brief text    [note: 'AI source when no campaign is linked']
-  status        varchar [not null, default: 'draft',
-                         note: "CHECK (status IN ('draft','sent','opened','replied'))"]
+  id            uuid      [primary key]
+  user_id       uuid      [not null]
+  client_id     uuid      [not null]
+  campaign_id   uuid      [null, note: 'OPTIONAL: part of a campaign?']
+  journalist_id uuid      [not null]
+  context_brief text      [note: 'AI source when no campaign is linked']
+  status        varchar   [not null, default: 'draft',
+                           note: "CHECK (status IN ('draft','sent','opened','replied'))"]
   created_at    timestamp [default: `now()`]
+  updated_at    timestamp [default: `now()`]
   Note: 'Actual outreach messages — ad-hoc or campaign-linked'
 }
 
 Table pitch_versions {
   id                uuid      [primary key]
   pitch_id          uuid      [not null]
-  version_number    int       [not null, note: 'increments per pitch']
+  version_number    int       [not null]
   ai_generated_body text      [not null]
   prompt_snapshot   text      [note: 'exact prompt sent to Gemini — for debugging & audit']
+  generation_params text      [note: 'JSON: tone, length, angle, custom_instructions']
   created_at        timestamp [default: `now()`]
-  Note: 'Stores each AI generation attempt; user picks the best before sending'
+  Note: 'Each AI generation attempt; user picks the best before sending'
 
   indexes {
     (pitch_id, version_number) [unique, name: 'uq_pitch_version']
@@ -435,10 +510,36 @@ Table pitch_versions {
 }
 
 // ==========================================
-// 4. FOREIGN KEYS
+// 4. CONFIGURATION ENTITIES
 // ==========================================
 
+Table prompt_templates {
+  id                  uuid      [primary key]
+  user_id             uuid      [not null]
+  name                varchar   [not null]
+  tone                varchar   [note: 'formal/conversational/urgent/enthusiastic']
+  length              varchar   [note: 'concise/standard/detailed']
+  angle               varchar   [note: 'news_hook/exclusive/follow_up/thought_leadership/event']
+  custom_instructions text
+  created_at          timestamp [default: `now()`]
+  updated_at          timestamp [default: `now()`]
+  deleted_at          timestamp [null, note: 'soft delete']
+  Note: 'Reusable AI generation presets per user'
+
+  indexes {
+    (user_id, name) [unique, name: 'uq_template_user_name']
+  }
+}
+
+// ==========================================
+// 5. FOREIGN KEYS
+// ==========================================
+
+Ref: outlets.added_by > users.id
+Ref: journalists.added_by > users.id
 Ref: journalists.outlet_id > outlets.id
+
+Ref: clients.user_id > users.id
 
 Ref: crm_relationships.user_id       > users.id
 Ref: crm_relationships.journalist_id > journalists.id
@@ -452,21 +553,20 @@ Ref: pitches.campaign_id   > campaigns.id
 Ref: pitches.journalist_id > journalists.id
 
 Ref: pitch_versions.pitch_id > pitches.id
+
+Ref: prompt_templates.user_id > users.id
 ```
 
 ### Relationship Summary
 
 ```
-users ──< campaigns ──< pitches >── journalists >── outlets
-  │                        │
-  └──< crm_relationships >─┘
-           │
-        journalists
-
-clients ──< campaigns
-clients ──< pitches
-
-pitches ──< pitch_versions
+users ──< clients ──< campaigns ──< pitches >── journalists >── outlets
+  │                                    │
+  ├──< crm_relationships >── journalists
+  │
+  ├──< prompt_templates
+  │
+  └──< pitches ──< pitch_versions
 ```
 
 ---

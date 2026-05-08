@@ -266,53 +266,56 @@ export default function JournalistsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col gap-6">
       <h1 className="text-3xl font-bold">Journalists & Outlets</h1>
 
-      <Tabs defaultValue="journalists">
+      <Tabs defaultValue="journalists" className="flex-1 min-h-0">
         <TabsList>
           <TabsTrigger value="journalists">Journalists</TabsTrigger>
           <TabsTrigger value="outlets">Outlets</TabsTrigger>
         </TabsList>
 
         {/* === JOURNALISTS TAB === */}
-        <TabsContent value="journalists" className="space-y-4">
+        <TabsContent value="journalists" className="flex flex-col gap-4 min-h-0">
           <div className="flex justify-end gap-2">
             {/* Import from Agency */}
             <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
               <DialogTrigger render={<Button variant="outline" />}>
                 <Download className="mr-2 h-4 w-4" /> Import from Agency
               </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+              <DialogContent className="sm:max-w-5xl">
                 <DialogHeader>
                   <DialogTitle>Import from Agency Database</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-3">
-                  <div className="flex gap-2">
+                <div className="space-y-3 min-w-0">
+                  <div className="flex items-center gap-2">
                     <Input
                       placeholder="Search by name or email…"
                       value={importSearch}
                       onChange={(e) => setImportSearch(e.target.value)}
-                      className="flex-1"
+                      className="w-48"
                     />
-                    <Select
-                      value={importNiche}
-                      onValueChange={(v) => setImportNiche(v ?? "all")}
-                    >
-                      <SelectTrigger className="w-48">
-                        <SelectValue placeholder="All niches" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All niches</SelectItem>
-                        {allNiches.map((n) => (
-                          <SelectItem key={n} value={n}>
-                            {n}
-                          </SelectItem>
+                    <div className="flex items-center gap-2 ml-auto">
+                      <Label className="text-sm text-muted-foreground whitespace-nowrap">Niche</Label>
+                      <Select
+                        value={importNiche}
+                        onValueChange={(v) => setImportNiche(v ?? "all")}
+                      >
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder="All niches" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All niches</SelectItem>
+                          {allNiches.map((n) => (
+                            <SelectItem key={n} value={n}>
+                              {n}
+                            </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    </div>
                   </div>
-                  <div className="max-h-96 overflow-y-auto rounded-md border">
+                  <div className="max-h-96 w-full overflow-y-auto rounded-md border">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -390,7 +393,13 @@ export default function JournalistsPage() {
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select outlet" />
+                        <span className="flex flex-1 text-left text-sm truncate" data-slot="select-value">
+                          {journalistForm.outlet_id ? (
+                            outlets.find((o) => o.id === journalistForm.outlet_id)?.name ?? "Select outlet"
+                          ) : (
+                            <span className="text-muted-foreground">Select outlet</span>
+                          )}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
                         {outlets.map((o) => (
@@ -448,8 +457,8 @@ export default function JournalistsPage() {
             </Dialog>
           </div>
 
-          <Card>
-            <CardContent className="pt-6">
+          <Card className="flex-1 min-h-0">
+            <CardContent className="pt-6 flex-1 min-h-0 overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -566,7 +575,7 @@ export default function JournalistsPage() {
         </TabsContent>
 
         {/* === OUTLETS TAB === */}
-        <TabsContent value="outlets" className="space-y-4">
+        <TabsContent value="outlets" className="flex flex-col gap-4 min-h-0">
           <div className="flex justify-end">
             <Dialog
               open={outletDialogOpen}
@@ -630,8 +639,8 @@ export default function JournalistsPage() {
             </Dialog>
           </div>
 
-          <Card>
-            <CardContent className="pt-6">
+          <Card className="flex-1 min-h-0">
+            <CardContent className="pt-6 flex-1 min-h-0 overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>

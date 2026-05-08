@@ -335,13 +335,13 @@ func runSeed(db *gorm.DB, cfg *config.Config) {
 						PitchID:         pitch.ID,
 						VersionNumber:   v,
 						AIGeneratedBody: body,
-						PromptSnapshot:  generatePromptSnapshot(j.Name, j.Outlet.Name, j.Niche, cam.ClientID.String(), cam.Title),
+						PromptSnapshot:  generatePromptSnapshot(j.Name, j.Outlet.Name, j.Niche, clientNameByID(clients, cam.ClientID), cam.Title),
 					}
 					// Load outlet name if not preloaded
 					if j.Outlet.Name == "" {
 						var outlet models.Outlet
 						db.First(&outlet, "id = ?", j.OutletID)
-						ver.PromptSnapshot = generatePromptSnapshot(j.Name, outlet.Name, j.Niche, cam.ClientID.String(), cam.Title)
+						ver.PromptSnapshot = generatePromptSnapshot(j.Name, outlet.Name, j.Niche, clientNameByID(clients, cam.ClientID), cam.Title)
 						ver.AIGeneratedBody = fmt.Sprintf(
 							"Subject: Exclusive: %s reaches key milestone\n\nDear %s,\n\n"+
 								"I'm reaching out about %s, which I believe aligns with your "+
@@ -376,6 +376,15 @@ func generatePromptSnapshot(journalistName, outletName, niche, clientName, campa
 	return "Generate a personalized pitch email for journalist " + journalistName +
 		" at " + outletName + " (niche: " + niche + ") on behalf of client " + clientName +
 		". Campaign context: " + campaignTitle + "."
+}
+
+func clientNameByID(clients []models.Client, id uuid.UUID) string {
+	for _, c := range clients {
+		if c.ID == id {
+			return c.Name
+		}
+	}
+	return id.String()
 }
 
 func slugify(s string) string {

@@ -15,6 +15,7 @@ import (
 // Claims are the JWT payload fields embedded in every token.
 type Claims struct {
 	UserID uuid.UUID `json:"user_id"`
+	Email  string    `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -48,7 +49,7 @@ func (s *AuthService) Register(email, password string) (*models.User, string, er
 		return nil, "", err
 	}
 
-	token, err := s.generateToken(user.ID)
+	token, err := s.generateToken(user.ID, user.Email)
 	if err != nil {
 		return nil, "", err
 	}
@@ -67,7 +68,7 @@ func (s *AuthService) Login(email, password string) (*models.User, string, error
 		return nil, "", errors.New("invalid credentials")
 	}
 
-	token, err := s.generateToken(user.ID)
+	token, err := s.generateToken(user.ID, user.Email)
 	if err != nil {
 		return nil, "", err
 	}
@@ -92,9 +93,10 @@ func (s *AuthService) ValidateToken(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
-func (s *AuthService) generateToken(userID uuid.UUID) (string, error) {
+func (s *AuthService) generateToken(userID uuid.UUID, email string) (string, error) {
 	claims := Claims{
 		UserID: userID,
+		Email:  email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

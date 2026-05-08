@@ -96,7 +96,7 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Clients</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -142,11 +142,11 @@ export default function ClientsPage() {
         </Dialog>
       </div>
 
-      <Card>
+      <Card className="flex-1 min-h-0">
         <CardHeader>
           <CardTitle>All Clients</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 min-h-0 overflow-y-auto">
           {loading ? (
             <p className="text-muted-foreground">Loading...</p>
           ) : clients.length === 0 ? (

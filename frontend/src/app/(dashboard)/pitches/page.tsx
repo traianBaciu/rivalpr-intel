@@ -389,7 +389,7 @@ export default function PitchesPage() {
     .filter(Boolean) as PitchVersion[];
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Pitches</h1>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -410,7 +410,13 @@ export default function PitchesPage() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select client" />
+                    <span className="flex flex-1 text-left text-sm truncate" data-slot="select-value">
+                      {createForm.client_id ? (
+                        clients.find((c) => c.id === createForm.client_id)?.name ?? "Select client"
+                      ) : (
+                        <span className="text-muted-foreground">Select client</span>
+                      )}
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
                     {clients.map((c) => (
@@ -430,7 +436,13 @@ export default function PitchesPage() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select journalist" />
+                    <span className="flex flex-1 text-left text-sm truncate" data-slot="select-value">
+                      {createForm.journalist_id ? (
+                        (() => { const j = journalists.find((j) => j.id === createForm.journalist_id); return j ? `${j.name} (${j.outlet?.name || "No outlet"})` : "Select journalist"; })()
+                      ) : (
+                        <span className="text-muted-foreground">Select journalist</span>
+                      )}
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
                     {journalists.map((j) => (
@@ -453,7 +465,13 @@ export default function PitchesPage() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="No campaign" />
+                    <span className="flex flex-1 text-left text-sm truncate" data-slot="select-value">
+                      {createForm.campaign_id ? (
+                        campaigns.find((c) => c.id === createForm.campaign_id)?.title ?? "No campaign"
+                      ) : (
+                        <span className="text-muted-foreground">No campaign</span>
+                      )}
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No campaign</SelectItem>
@@ -489,7 +507,8 @@ export default function PitchesPage() {
 
       {/* Filters */}
       <div className="flex gap-4">
-        <div className="w-48">
+        <div className="w-48 space-y-1">
+          <Label className="text-xs text-muted-foreground">Status</Label>
           <Select
             value={filterStatus}
             onValueChange={(v) => setFilterStatus(v ?? "all")}
@@ -507,13 +526,20 @@ export default function PitchesPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="w-64">
+        <div className="w-64 space-y-1">
+          <Label className="text-xs text-muted-foreground">Campaign</Label>
           <Select
             value={filterCampaign}
             onValueChange={(v) => setFilterCampaign(v ?? "all")}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Filter by campaign" />
+              <span className="flex flex-1 text-left text-sm truncate" data-slot="select-value">
+                {filterCampaign === "all" ? (
+                  <span className="text-muted-foreground">Filter by campaign</span>
+                ) : (
+                  campaigns.find((c) => c.id === filterCampaign)?.title ?? "Filter by campaign"
+                )}
+              </span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Campaigns</SelectItem>
@@ -528,13 +554,13 @@ export default function PitchesPage() {
       </div>
 
       {/* Pitches table */}
-      <Card>
+      <Card className="flex-1 min-h-0">
         <CardHeader>
           <CardTitle>
             Pitches {pitches.length > 0 && `(${pitches.length})`}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 min-h-0 overflow-y-auto">
           {loading ? (
             <p className="text-muted-foreground">Loading...</p>
           ) : pitches.length === 0 ? (
@@ -883,7 +909,7 @@ export default function PitchesPage() {
 
       {/* ── Versions Dialog ────────────────────────────────────────────────── */}
       <Dialog open={versionsOpen} onOpenChange={setVersionsOpen}>
-        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-[90vw] w-[90vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle>
